@@ -2,6 +2,9 @@
 // Concessionari con pagina Autoscout24: una riga nella tabella public.dealers.
 // Altri siti: scrivere una funzione che restituisce { cars, expected } e aggiungerla a `own` in fondo.
 
+import { scoreDeals, type Deal } from "./deals.ts";
+import { collectLombardia, LOMBARDIA, mergeListings } from "./lombardia.ts";
+
 type Car = {
   src: string; id: string; brand: string; model: string; ver: string;
   year: number; reg: string; km: number; price: number; old: number;
@@ -10,8 +13,10 @@ type Car = {
   cash?: number; // prezzo senza finanziamento, quando il prezzo esposto vale solo finanziando
   real?: boolean; // l'annuncio dichiara prezzo reale / senza vincolo di finanziamento
   note?: string; // avvertenza sull'annuncio
+  deal?: Deal; // stima del prezzo normale e livello dell'affare, calcolati in deals.ts
+  sellerId?: string; sellerName?: string; sellerType?: string; city?: string; postcode?: string; portal?: string; unavailable?: boolean;
 };
-type SourceResult = { cars: Car[]; expected: number };
+type SourceResult = { cars: Car[]; expected: number; complete?: boolean; error?: string; coverage?: Record<string, unknown> };
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15";
@@ -169,7 +174,7 @@ function autoscoutDealer(name: string, slug: string, dealerNote = ""): () => Pro
       cars.push({
         src: name,
         id: l.id,
-        brand: String(v.make ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
+        brand: String(v.make ?? "").normalize("NFD").replace(/[̀-ͯ]/g, ""),
         model: String(v.model ?? ""),
         ver: String(v.modelVersionInput ?? "").replace(/\*[^*]*\*/g, " ").replace(/\*/g, " ").replace(/\s+/g, " ").trim(),
         year: Number(rawDate.slice(0, 4)) || Number(reg.split("/")[1]) || 0,
@@ -277,7 +282,7 @@ async function loadDealers(): Promise<Dealer[]> {
 async function runSource(s: Source) {
   try {
     const r = await s.run();
-    return { name: s.name, site: s.site, ok: true, expected: r.expected, got: r.cars.length, error: "", cars: r.cars };
+    return { name: s.name, site: s.site, ok: r.complete !== false, expected: r.expected, got: r.cars.length, error: r.error || "", coverage: r.coverage, cars: r.cars };
   } catch (e) {
     console.error(s.name + " non letto: " + String((e as Error).message ?? e));
     return { name: s.name, site: s.site, ok: false, expected: 0, got: 0, error: String((e as Error).message ?? e), cars: [] as Car[] };
@@ -287,13 +292,18 @@ async function runSource(s: Source) {
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const headers = { ...CORS, "Content-Type": "application/json; charset=utf-8" };
-  if (cache && Date.now() - cache.at < CACHE_MS) return new Response(cache.body, { headers });
+  // ?debug=deals restituisce il riepilogo del calcolo dei migliori affari al posto del catalogo.
+  const debug = new URL(req.url).searchParams.get("debug");
+  if (!debug && cache && Date.now() - cache.at < CACHE_MS) return new Response(cache.body, { headers });
 
+  const configured = await loadDealers();
+  const knownDealers = Object.fromEntries(configured.map((d) => [d.slug, d.name]));
   const own: Source[] = [
     { name: "brumbrum", site: "brumbrum.it", run: brumbrum },
     { name: "AM Autoccasione", site: "amautoccasione.it", run: amAutoccasione },
+    { name: LOMBARDIA.name, site: "autoscout24.it · Lombardia · fino a 10.000 € · dal 2020", run: () => collectLombardia(getHtmlOnce, knownDealers) },
   ];
-  const dealers: Source[] = (await loadDealers()).map((d) => ({
+  const dealers: Source[] = configured.map((d) => ({
     name: d.name,
     site: d.place + " (Autoscout24)",
     run: autoscoutDealer(d.name, d.slug, d.note ?? ""),
@@ -303,11 +313,30 @@ Deno.serve(async (req: Request) => {
     Promise.all(own.map(runSource)),
     inBatches(dealers, 3, runSource),
   ]);
-  const results = [...ownRes, ...dealerRes];
+  // I saloni configurati hanno precedenza: stessi ID e storico degli avvisi.
+  const ordered = [...dealerRes, ...ownRes];
+  const cars = mergeListings(ordered.flatMap((r) => r.cars).filter((c) => c.price > 0));
+  const retained = new Set(cars);
+  const results = [...ownRes, ...dealerRes].map((r) => {
+    const unique = r.cars.filter((c) => retained.has(c));
+    return { ...r, cars: unique, got: unique.length, expected: r.name === LOMBARDIA.name ? unique.length : r.expected };
+  });
+  const deals = scoreDeals(cars, Date.now());
+  if (debug === "deals") {
+    const line = (c: Car) => [c.src, c.brand + " " + c.model, c.ver.slice(0, 34), c.reg, c.km, c.cash || c.price, c.deal!.est, c.deal!.pct, c.deal!.n, c.deal!.lvl];
+    const scored = cars.filter((c) => c.deal).sort((a, b) => b.deal!.pct - a.deal!.pct);
+    return new Response(JSON.stringify({
+      ...deals,
+      columns: ["sito", "auto", "versione", "immatricolazione", "km", "prezzo", "stima", "% sotto la stima", "confronti", "livello"],
+      highlighted: scored.filter((c) => c.deal!.lvl !== 0).map(line),
+      inBudget: scored.filter((c) => c.price <= 10000 && c.year >= 2020).map(line),
+    }), { headers });
+  }
   const body = JSON.stringify({
     updated: new Date().toISOString(),
     sources: results.map(({ cars: _c, ...meta }) => meta),
-    cars: results.flatMap((r) => r.cars).filter((c) => c.price > 0),
+    deals: { scored: deals.scored, top: deals.top, good: deals.good },
+    cars,
   });
   // In memoria solo i risultati completi: un errore momentaneo non deve restare per minuti.
   if (results.every((r) => r.ok && r.got >= r.expected)) cache = { at: Date.now(), body };
