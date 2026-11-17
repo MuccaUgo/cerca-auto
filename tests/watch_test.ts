@@ -16,7 +16,7 @@ const mk = (src: string, id: string, price: number, year = 2021, extra: Record<s
 const st = {
   inventory: new Map<string, any>(), sources: new Set<string>(['brumbrum', 'AM Autoccasione']),
   subs: [{ id: 'sub1', subscription: { endpoint: 'https://web.push.apple.com/abc', keys: { p256dh: client.getPublicKey('base64url'), auth: auth.toString('base64url') } }, token_hash: 'x', enabled: true, created_at: pg(T - H) }],
-  sent: [] as any[], runs: new Map<string, any>(), pushes: [] as any[], catalog: [] as any[], pushStatus: 201, pagedReads: 0, unordered: 0,
+  sent: [] as any[], runs: new Map<string, any>(), pushes: [] as any[], catalog: [] as any[], pushStatus: 201, catalogStatus: 200, partial: false, pagedReads: 0, unordered: 0,
 };
 const baseline = (car: any) => st.inventory.set(car.src + '|' + car.id, { car_key: car.src + '|' + car.id, src: car.src, first_seen: pg(T - 4 * H), last_seen: pg(T - 4 * H), eligible: false, entered_at: null, entered_from: null, car });
 
@@ -29,7 +29,7 @@ globalThis.fetch = (async (input: any, init: any = {}) => {
     if (st.pushStatus < 300) st.pushes.push(JSON.parse(ece.decrypt(Buffer.from(init.body), { version: 'aes128gcm', privateKey: client, authSecret: auth }).toString()));
     return new Response(null, { status: st.pushStatus });
   }
-  if (url.pathname === '/functions/v1/cerca-auto') return json({ updated: new Date().toISOString(), sources: [...new Set(st.catalog.map((c) => c.src))].map((name) => ({ name, ok: true, got: 1, expected: 1 })), cars: st.catalog });
+  if (url.pathname === '/functions/v1/cerca-auto') return json({ updated: new Date().toISOString(), sources: [...new Set(st.catalog.map((c) => c.src))].map((name, i) => ({ name, ok: !(st.partial && i === 0), got: 1, expected: 1 })), cars: st.catalog }, st.catalogStatus);
   const table = url.pathname.replace('/rest/v1/', ''), q = url.searchParams, body = init.body ? JSON.parse(String(init.body)) : null;
   const page = (rows: any[]) => { if (q.has('offset')) { st.pagedReads++; if (!q.get('order')) st.unordered++; } const o = Number(q.get('offset') ?? 0); return json(rows.slice(o, o + Number(q.get('limit') ?? 1e9))); };
   if (table === 'rpc/car_watch_get_secrets') return json({ cerca_auto_vapid: JSON.stringify(vapid), cerca_auto_cron_secret: 'cron' });
@@ -55,7 +55,7 @@ await import('../supabase/functions/cerca-auto-watch/index.ts');
 async function scan() {
   const before = st.pushes.length;
   const res = await handler(new Request('https://proj.test/functions/v1/cerca-auto-watch?action=scan', { method: 'POST', headers: { 'x-watch-secret': 'cron' }, body: '{}' }));
-  const out = await res.json(); const run = st.runs.get(out.runId);
+  const out = await res.json(); const run = out.runId ? st.runs.get(out.runId) : [...st.runs.values()].at(-1);
   return { status: res.status, out, run, pushes: st.pushes.slice(before) };
 }
 let failed = 0;
@@ -83,9 +83,11 @@ check('1 testo', r.pushes[0]?.body, 'Fiat Panda N1 · 2022 · 9.500 €\nFiat Pa
 check('1 letture a pagine tutte ordinate', [st.pagedReads > 4, st.unordered], [true, 0]);
 check('1 storico: prezzo di partenza salvato', [st.inventory.get('brumbrum|K1').entered_from, st.inventory.get('brumbrum|K2').entered_at], [10490, null]);
 
-// 2) stesso catalogo: nessun avviso ripetuto
+// 2) stesso catalogo: conferma il controllo senza ripetere le auto
 r = await scan();
-check('2 nessuna ripetizione', [r.run.status, r.run.new_cars, r.run.price_drops, r.run.pushes_sent, r.pushes.length], ['ok', 0, 0, 0, 0]);
+check('2 conferma senza ripetizione', [r.run.status, r.run.new_cars, r.run.price_drops, r.run.pushes_sent, r.pushes.length, r.pushes[0]?.count], ['ok', 0, 0, 1, 1, 0]);
+check('2 titolo nessuna novità', r.pushes[0]?.title, 'Cerca auto: nessuna novità');
+check('2 nessuna auto nella conferma', r.pushes[0]?.cars, []);
 check('2 il ribasso resta in storico', st.inventory.get('brumbrum|K1').entered_at !== null, true);
 
 // 3) un'auto comparsa dopo l'iscrizione, fuori budget, scende sotto soglia
@@ -103,12 +105,35 @@ check('4 recuperato al giro dopo', [r.run.status, r.run.price_drops, r.pushes[0]
 // 5) un'auto già avvisata risale e riscende: niente secondo avviso
 st.catalog = st.catalog.map((c) => c.id === 'K1' ? { ...c, price: 10600 } : c); await scan();
 st.catalog = st.catalog.map((c) => c.id === 'K1' ? { ...c, price: 9900 } : c); r = await scan();
-check('5 niente doppio avviso', [r.run.price_drops, r.pushes.length], [1, 0]);
+check('5 niente doppio annuncio, ma esito inviato', [r.run.price_drops, r.pushes.length, r.pushes[0]?.count], [1, 1, 0]);
 
 // 6) un dispositivo che si iscrive dopo non riceve i ribassi vecchi
 st.subs.push({ ...st.subs[0], id: 'sub2', created_at: pg(Date.now()) }); await new Promise((ok) => setTimeout(ok, 5));
 r = await scan();
-check('6 nuovo dispositivo, nessun arretrato', [r.pushes.length, st.sent.filter((x) => x.subscription_id === 'sub2').length], [0, 0]);
+check('6 esito per entrambi senza arretrati', [r.pushes.length, r.pushes.every((p) => p.count === 0), st.sent.filter((x) => x.subscription_id === 'sub2').length], [2, true, 0]);
+
+// 7) una fonte assente non diventa una falsa conferma di assenza di novità.
+st.partial = true; r = await scan();
+check('7 esito parziale', [r.run.status, r.pushes.length, r.pushes[0]?.title, r.pushes[0]?.status], ['partial', 2, 'Cerca auto: controllo parziale', 'partial']);
+check('7 testo distingue le fonti non raggiunte', r.pushes[0]?.body.includes('Alcuni siti non hanno risposto completamente.'), true);
+st.partial = false;
+
+// 8) nessun catalogo utile: segnala l'errore, senza toccare la deduplicazione.
+const sentBeforeError = sentKeys(); st.catalogStatus = 503; r = await scan();
+check('8 esito ricerca fallita', [r.status, r.run.status, r.run.pushes_sent, r.pushes[0]?.title, r.pushes[0]?.status], [500, 'error', 2, 'Cerca auto: controllo non riuscito', 'error']);
+check('8 storico avvisi invariato', sentKeys(), sentBeforeError);
+st.catalogStatus = 200;
+
+// 9) il primo controllo di una fonte crea lo storico ma conferma comunque il controllo.
+st.catalog.push(mk('Nuova fonte', 'INITIAL', 9000)); r = await scan();
+check('9 nuovo stock non trattato come novità', [r.pushes.length, r.pushes.every((p) => p.count === 0), sentKeys().includes('Nuova fonte|INITIAL')], [2, true, false]);
+
+// 10) l'ora della conferma segue Europe/Rome in inverno e in estate.
+for (const [checkedAt, expected] of [['2026-11-17T09:00:00Z', '10:00'], ['2026-07-17T08:00:00Z', '10:00']]) {
+  const message = notification([], 'time', { checkedAt, carsRead: 986, sources: 17, completeSources: 17 });
+  check('10 ora italiana ' + checkedAt, message.body.startsWith('Controllo delle ' + expected + ':'), true);
+  check('10 conteggio fonti', message.body.includes('986 annunci letti · 17/17 siti controllati.'), true);
+}
 
 // titoli
 const car = mk('brumbrum', 'X', 8950);
