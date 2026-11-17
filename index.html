@@ -299,8 +299,23 @@ if(typeof document!=="undefined"){(function(){
     if(busy) return; busy=true;
     var btn=$("go"); btn.disabled=true; btn.textContent="Sto cercando…";
     renderStatus("Leggo gli annunci dai siti, ci vogliono alcuni secondi.");
-    fetch(FUNCTION_URL,{headers:{Authorization:"Bearer "+ANON_KEY,apikey:ANON_KEY}})
-      .then(function(r){ if(!r.ok) throw new Error("il server ha risposto "+r.status); return r.json(); })
+    // brumbrum rifiuta le richieste da alcuni datacenter (es. Zurigo): si forza una regione UE che funziona,
+    // e se un sito manca si riprova dalla regione successiva.
+    var regions=["eu-central-1","eu-west-3","eu-west-1"];
+    function attempt(i,best){
+      return fetch(FUNCTION_URL+"?forceFunctionRegion="+regions[i],{headers:{Authorization:"Bearer "+ANON_KEY,apikey:ANON_KEY}})
+        .then(function(r){ if(!r.ok) throw new Error("il server ha risposto "+r.status); return r.json(); })
+        .then(function(data){
+          var complete=data.sources.every(function(x){return x.ok;});
+          if(!best||data.cars.length>best.cars.length) best=data;
+          if(complete||i===regions.length-1) return best;
+          return attempt(i+1,best);
+        },function(e){
+          if(i===regions.length-1){ if(best) return best; throw e; }
+          return attempt(i+1,best);
+        });
+    }
+    attempt(0,null)
       .then(function(data){
         if(!data.cars||!data.cars.length) throw new Error("nessun sito ha risposto");
         var last=store.get("cerca-auto-dati");
