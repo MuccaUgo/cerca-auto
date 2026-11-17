@@ -41,6 +41,9 @@ h1{font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:-.01
 .top{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between}
 .btn{font-family:var(--display);font-weight:700;font-size:16px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:11px 20px;min-height:46px;cursor:pointer}
 .btn:disabled{opacity:.6;cursor:progress}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);font-family:var(--body);font-weight:600;font-size:14px;padding:11px 14px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.ver-app{font-size:11px;color:var(--muted)}
 .status{color:var(--muted);font-size:13px;min-height:1.4em}
 .status.err{color:var(--warn)}
 .tag.new{background:var(--good);color:var(--surface)}
@@ -95,7 +98,10 @@ a.open{font-size:13px;font-weight:600;color:var(--accent)}
   <header>
     <div class="top">
       <h1>Cerca auto</h1>
-      <button class="btn" id="go" type="button">Cerca ora</button>
+      <div class="actions">
+        <button class="btn ghost" id="upd" type="button" title="Scarica l'ultima versione della pagina">Aggiorna app</button>
+        <button class="btn" id="go" type="button">Cerca ora</button>
+      </div>
     </div>
     <div class="status" id="status" role="status" aria-live="polite"></div>
   </header>
@@ -153,6 +159,7 @@ a.open{font-size:13px;font-weight:600;color:var(--accent)}
   <div class="note">
     <div>Cerca ora legge in quel momento tutti gli annunci di brumbrum.it, Achille Car (su Autoscout24) e AM Autoccasione. Prezzo e disponibilità vanno sempre confermati sull'annuncio.</div>
     <div>AM Autoccasione espone prezzi validi solo con finanziamento: il filtro usa quel prezzo, l'etichetta gialla indica quanto costa senza. Per le sue auto alimentazione e cambio sono dedotti dal titolo dell'annuncio.</div>
+    <div class="ver-app" id="appver"></div>
     <div>Le etichette Nuova e Scesa di prezzo confrontano la ricerca con quella precedente fatta da questo dispositivo.</div>
   </div>
 </div>
@@ -161,6 +168,8 @@ a.open{font-size:13px;font-weight:600;color:var(--accent)}
 var FUNCTION_URL = "https://udhrplrxqxgiafwxtbqe.supabase.co/functions/v1/cerca-auto";
 // Chiave pubblica (anon) del progetto Supabase: serve solo a chiamare la funzione.
 var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHJwbHJ4cXhnaWFmd3h0YnFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4NzMxNDYsImV4cCI6MjExMDQ0OTE0Nn0.IGw8x9AdKhWRMfIcU3CG7dHjbBQACOn1qlqDA75cNmo";
+
+var APP_VERSION = "5 · 17 nov 2026";
 
 var DEFAULTS={price:10000,year:2020,km:0,brand:"",body:"",sort:"price",text:"",fuel:[],gear:"",src:[],res:false,disc:false,fresh:false};
 
@@ -340,6 +349,12 @@ if(typeof document!=="undefined"){(function(){
       .then(function(){ busy=false; btn.disabled=false; btn.textContent="Cerca ora"; });
   }
   $("go").addEventListener("click",search);
+  // Ricarica la pagina saltando la copia salvata dal telefono. Filtri e ultima ricerca restano.
+  $("upd").addEventListener("click",function(){
+    this.disabled=true; this.textContent="Aggiorno…";
+    location.replace(location.pathname+"?v="+Date.now());
+  });
+  $("appver").textContent="Versione "+APP_VERSION;
 
   var last=store.get("cerca-auto-dati");
   if(last&&last.cars){ load(last,null); renderStatus(); render(); }
