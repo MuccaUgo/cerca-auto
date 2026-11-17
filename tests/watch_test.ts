@@ -142,5 +142,7 @@ check('titolo 1 nuova', notification([{ car }], 't').title, 'Una nuova auto su C
 check('titolo 2 nuove', notification([{ car }, { car }], 't').title, '2 nuove auto su Cerca auto');
 check('titolo 2 ribassi', notification([{ car, from: 10500 }, { car, from: 11000 }], 't').title, '2 auto sono scese sotto i 10.000 €');
 check('auto mai vista con prezzo ignoto non è un ribasso', observeCars([car], [{ car_key: 'brumbrum|X', first_seen: pg(T), eligible: false, price: null }], [], pg(T))[0].entered_at, null);
+check('segnalazione finanziamento esplicita nella notifica', notification([{car:{...car,note:'Finanziamento segnalato dall’utente: prezzo senza finanziamento da verificare'}}], 't').body.includes('condizioni di prezzo da verificare'), true);
+check('finanziamento noto resta distinto dalla segnalazione', notification([{car:{...car,cash:10950}}], 't').body.includes('con finanziamento'), true);
 console.log(failed ? '\n' + failed + ' PROVE FALLITE' : '\nTUTTE LE PROVE SUPERATE');
 Deno.exit(failed ? 1 : 0);

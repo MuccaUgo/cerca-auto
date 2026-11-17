@@ -38,3 +38,12 @@ test('deduplication preserves existing source, conditions and seller metadata',(
  const existing={...R.listingCar(listing('same')) ,src:'Achille Car',note:'Avvertenza originale'};
  delete existing.sellerId;const regional=R.listingCar(listing('same'));const out=R.mergeListings([existing,regional]);assert.equal(out.length,1);assert.equal(out[0].src,'Achille Car');assert.equal(out[0].sellerId,'salone1');assert.equal(out[0].note,'Avvertenza originale');
 });
+
+test('reported Loconte financing never invents a cash price or preserves a no-strings badge, including duplicates',()=>{
+ const c=R.listingCar(listing('loconte',{seller:{id:'28098624',type:'Dealer',companyName:'Loconte Automobili'},vehicle:{make:'Fiat',model:'Panda',modelVersionInput:'Prezzo reale',fuel:'Benzina',transmission:'Manuale'}}));
+ assert.match(c.note,/segnalato dall’utente/);assert.match(c.note,/senza finanziamento da verificare/);assert.equal(c.real,false);assert.equal(c.cash,undefined);
+ const old={...c,src:'Salone configurato',sellerId:undefined,sellerName:undefined,note:'',real:true};
+ const merged=R.mergeListings([old,c])[0];assert.equal(merged.src,'Salone configurato');assert.equal(merged.real,false);assert.match(merged.note,/segnalato dall’utente/);
+ assert.equal(R.listingCar(listing('other',{seller:{id:'unrelated',type:'Dealer',companyName:'Loconte omonimo'}})).note,'');
+ assert.equal(R.mergeListings([merged,c])[0].note.split('segnalato dall’utente').length,2);
+});

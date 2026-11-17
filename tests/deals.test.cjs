@@ -75,3 +75,11 @@ test('regional listings count actual sellers and keep private/dealer comparisons
   assert.equal(applyFilters(data,{...DEFAULTS,price:20000,seller:'private'},ratings).length,0);
   assert.equal(applyFilters(data,{...DEFAULTS,price:20000,seller:'dealer'},ratings).length,4);
 });
+
+test('reported financing is excluded as a deal and as reference, and survives AI export and clean filtering',()=>{
+ const note='Finanziamento segnalato dall’utente: prezzo senza finanziamento da verificare';
+ const data=market({note,real:false});assert.equal(Deals.calculate(data,2026)[Deals.key(data[0])],undefined);
+ const peers=market();peers[1].note=note;assert.equal(Deals.calculate(peers,2026)[Deals.key(peers[0])],undefined);
+ assert.equal(applyFilters(data,{...DEFAULTS,price:10000,clean:true},{}).length,0);
+ const text=formatListingsForAI([data[0]],null);assert.match(text,/segnalato dall’utente/);assert.match(text,/senza finanziamento da verificare/);assert.doesNotMatch(text,/Prezzo senza finanziamento: [0-9]/);
+});
