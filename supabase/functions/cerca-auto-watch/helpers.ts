@@ -47,8 +47,24 @@ export function safePushEndpoint(endpoint: string): boolean {
 }
 // `from` is the previous price when the alert is a price drop below the limit; empty for a new listing.
 export type Alert = { car: WatchCar; from?: number | null };
-export function notification(alerts: Alert[], tag: string) {
+export type ScanSummary = { checkedAt: string; carsRead: number; sources: number; completeSources: number };
+export function failedNotification(tag: string, checkedAt: string) {
+  return { title: 'Cerca auto: controllo non riuscito', body: 'Non sono riuscito a completare la ricerca. Non posso confermare se ci sono novità. Riproverò al prossimo controllo.', cars: [], count: 0, tag, created: checkedAt, status: 'error' };
+}
+export function notification(alerts: Alert[], tag: string, summary?: ScanSummary) {
   const nf = new Intl.NumberFormat('it-IT', { useGrouping: 'always' } as Intl.NumberFormatOptions);
+  const created = summary?.checkedAt ?? new Date().toISOString();
+  const partial = !!summary && summary.completeSources < summary.sources;
+  if (!alerts.length) {
+    const time = new Date(created).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+    return {
+      title: partial ? 'Cerca auto: controllo parziale' : 'Cerca auto: nessuna novità',
+      body: 'Controllo delle ' + time + ': ' + (partial ? 'nessuna novità dai siti raggiunti. ' : 'nessun nuovo annuncio o ribasso da segnalare. ') +
+        (summary ? nf.format(summary.carsRead) + ' annunci letti · ' + summary.completeSources + '/' + summary.sources + ' siti controllati.' : '') +
+        (partial ? ' Alcuni siti non hanno risposto completamente.' : ''),
+      cars: [], count: 0, tag, created, status: partial ? 'partial' : 'ok',
+    };
+  }
   const drops = alerts.filter((alert) => alert.from).length, fresh = alerts.length - drops;
   const limit = nf.format(WATCH.maxPrice) + ' €';
   const preview = alerts.slice(0, 2).map(({ car, from }) => ({
@@ -64,7 +80,8 @@ export function notification(alerts: Alert[], tag: string) {
   return {
     title,
     body: preview.map((car) => car.label).join('\n') +
-      (alerts.length === 3 ? '\nE un’altra auto. Apri la ricerca.' : alerts.length > 3 ? '\nE altre ' + (alerts.length - 2) + ' auto. Apri la ricerca.' : ''),
-    cars: preview, count: alerts.length, tag, created: new Date().toISOString(),
+      (alerts.length === 3 ? '\nE un’altra auto. Apri la ricerca.' : alerts.length > 3 ? '\nE altre ' + (alerts.length - 2) + ' auto. Apri la ricerca.' : '') +
+      (partial ? '\nControllo parziale: alcuni siti non hanno risposto completamente.' : ''),
+    cars: preview, count: alerts.length, tag, created, status: partial ? 'partial' : 'ok',
   };
 }

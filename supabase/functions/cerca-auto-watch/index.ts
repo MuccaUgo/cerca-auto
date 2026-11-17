@@ -1,5 +1,5 @@
 import webpush from 'npm:web-push@3.6.7';
-import { matchesWatch, notification, observeCars, safePushEndpoint, WATCH, type WatchCar } from './helpers.ts';
+import { failedNotification, matchesWatch, notification, observeCars, safePushEndpoint, WATCH, type WatchCar } from './helpers.ts';
 
 const PROJECT = Deno.env.get('SUPABASE_URL')!;
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -98,6 +98,8 @@ async function scan() {
     const rows = observeCars(cars, previous, initialized.map((row) => row.name), now);
     for (let i = 0; i < rows.length; i += 200) await db('car_watch_inventory?on_conflict=car_key', 'POST', rows.slice(i, i + 200), 'resolution=merge-duplicates');
     const complete = data.sources.filter((source: any) => source.ok && source.got >= source.expected).map((source: any) => ({ name: source.name }));
+    const partial = complete.length < data.sources.length;
+    const summary = { checkedAt: new Date().toISOString(), carsRead: rows.length, sources: data.sources.length, completeSources: complete.length };
     if (complete.length) await db('car_watch_sources?on_conflict=name', 'POST', complete, 'resolution=ignore-duplicates');
     const subscriptions: Subscription[] = await all('car_watch_subscriptions?select=id,subscription,token_hash,enabled,created_at&enabled=eq.true', 'id');
     let pushes = 0, failed = 0;
@@ -114,10 +116,10 @@ async function scan() {
         const isNew = row.eligible && row.first_seen > sub.created_at && row.first_seen >= cutoff;
         return dropped || isNew ? [{ row, from: dropped ? row.entered_from : null }] : [];
       });
-      if (!fresh.length) continue;
       fresh.sort((a, b) => a.row.car.price - b.row.car.price);
       try {
-        if (await send(sub, notification(fresh.map((alert) => ({ car: alert.row.car, from: alert.from })), runId))) {
+        // Every completed check delivers an outcome, even when there are no unsent car events.
+        if (await send(sub, notification(fresh.map((alert) => ({ car: alert.row.car, from: alert.from })), runId, summary))) {
           for (let i = 0; i < fresh.length; i += 200) await db('car_watch_sent?on_conflict=subscription_id,car_key', 'POST', fresh.slice(i, i + 200).map((alert) => ({ subscription_id: sub.id, car_key: alert.row.car_key })), 'resolution=ignore-duplicates');
           pushes++;
         }
@@ -125,11 +127,18 @@ async function scan() {
     }
     const count = rows.filter((row) => !known.has(row.car_key) && row.eligible).length;
     const drops = rows.filter((row) => row.entered_at === now).length;
-    const partial = data.sources.some((source: any) => !source.ok || source.got < source.expected);
     await db('car_watch_runs?id=eq.' + runId, 'PATCH', { finished_at: new Date().toISOString(), status: partial || failed ? 'partial' : 'ok', sources: data.sources, cars_read: rows.length, new_cars: count, price_drops: drops, pushes_sent: pushes, error: failed ? failed + ' push deliveries failed' : null });
     return { runId, cars: rows.length, newCars: count, drops, pushes, partial, failed };
   } catch (error) {
-    await db('car_watch_runs?id=eq.' + runId, 'PATCH', { finished_at: new Date().toISOString(), status: 'error', error: (error as Error).message }).catch(() => {});
+    // A failed catalog is not "no news": report it honestly, without changing event history.
+    let errorPushes = 0;
+    try {
+      const subscriptions: Subscription[] = await all('car_watch_subscriptions?select=id,subscription,token_hash,enabled,created_at&enabled=eq.true', 'id');
+      for (const sub of subscriptions) {
+        try { if (await send(sub, failedNotification(runId, new Date().toISOString()))) errorPushes++; } catch (_) { /* Best effort if the provider is also unavailable. */ }
+      }
+    } catch (_) { /* The database may itself be unavailable. */ }
+    await db('car_watch_runs?id=eq.' + runId, 'PATCH', { finished_at: new Date().toISOString(), status: 'error', pushes_sent: errorPushes, error: (error as Error).message }).catch(() => {});
     throw error;
   } finally { await db('rpc/car_watch_release', 'POST', {}).catch(() => {}); }
 }
