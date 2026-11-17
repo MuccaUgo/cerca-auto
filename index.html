@@ -79,8 +79,11 @@ li.car.res{opacity:.72}
 .foot{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;justify-content:space-between;margin-top:6px}
 .tags{display:flex;flex-wrap:wrap;gap:6px}
 .tag{font-size:11px;font-weight:600;letter-spacing:.02em;border-radius:4px;padding:2px 7px;background:var(--chip);color:var(--ink)}
-.tag.src-b{border-left:3px solid #2563eb}
-.tag.src-a{border-left:3px solid #9333ea}
+.tag.src-0{border-left:3px solid #2563eb}
+.tag.src-1{border-left:3px solid #9333ea}
+.tag.src-2{border-left:3px solid #0d9488}
+.tag.src-3{border-left:3px solid #be185d}
+.price small{display:block;color:var(--warn);font-size:11px;font-weight:600}
 .tag.warn{background:var(--warn-bg);color:var(--warn)}
 a.open{font-size:13px;font-weight:600;color:var(--accent)}
 .empty{background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:20px;color:var(--muted);text-align:center}
@@ -148,7 +151,8 @@ a.open{font-size:13px;font-weight:600;color:var(--accent)}
   <ul class="list" id="list"></ul>
 
   <div class="note">
-    <div>Cerca ora legge in quel momento tutti gli annunci di brumbrum.it e di Achille Car (su Autoscout24). Prezzo e disponibilità vanno sempre confermati sull'annuncio.</div>
+    <div>Cerca ora legge in quel momento tutti gli annunci di brumbrum.it, Achille Car (su Autoscout24) e AM Autoccasione. Prezzo e disponibilità vanno sempre confermati sull'annuncio.</div>
+    <div>AM Autoccasione espone prezzi validi solo con finanziamento: il filtro usa quel prezzo, l'etichetta gialla indica quanto costa senza. Per le sue auto alimentazione e cambio sono dedotti dal titolo dell'annuncio.</div>
     <div>Le etichette Nuova e Scesa di prezzo confrontano la ricerca con quella precedente fatta da questo dispositivo.</div>
   </div>
 </div>
@@ -213,8 +217,11 @@ if(typeof document!=="undefined"){(function(){
     $("fBrand").innerHTML='<option value="">Tutte</option>'+uniq(function(c){return c.brand;}).map(function(b){return '<option>'+esc(b)+'</option>';}).join("");
     $("fBody").innerHTML='<option value="">Tutte</option>'+uniq(function(c){return c.body.toLowerCase();}).map(function(b){return '<option value="'+esc(b)+'">'+esc(b.charAt(0).toUpperCase()+b.slice(1))+'</option>';}).join("");
   }
-  function chips(el,items,key,multi){
+  function chipButtons(el,items){
     el.innerHTML=items.map(function(it){return '<button type="button" class="chip" data-v="'+esc(it[0])+'">'+esc(it[1])+'</button>';}).join("");
+  }
+  function chips(el,items,key,multi){
+    chipButtons(el,items);
     el.addEventListener("click",function(e){
       var b=e.target.closest(".chip"); if(!b) return; var v=b.getAttribute("data-v");
       if(multi){var i=state[key].indexOf(v); if(i<0) state[key].push(v); else state[key].splice(i,1);}
@@ -224,7 +231,8 @@ if(typeof document!=="undefined"){(function(){
   }
   chips($("cFuel"),[["Benzina","Benzina"],["Ibrida","Ibrida"],["GPL","GPL"],["Metano","Metano"],["Diesel","Diesel"],["Elettrica","Elettrica"]],"fuel",true);
   chips($("cGear"),[["","Tutti"],["Manuale","Manuale"],["Automatico","Automatico"]],"gear",false);
-  chips($("cSrc"),[["brumbrum","brumbrum"],["Achille Car","Achille Car"]],"src",true);
+  var SITES=["brumbrum","Achille Car","AM Autoccasione"];
+  chips($("cSrc"),SITES.map(function(n){return [n,n];}),"src",true);
 
   function bind(id,key,num){
     $(id).addEventListener("input",function(){
@@ -271,20 +279,20 @@ if(typeof document!=="undefined"){(function(){
     var res=applyFilters(CARS,state);
     $("count").textContent=res.length;
     $("countLabel").textContent=(res.length===1?"auto trovata":"auto trovate")+" su "+CARS.length+" lette";
-    var nb=res.filter(function(c){return c.src==="brumbrum";}).length;
     var nNew=res.filter(function(c){return c.isNew;}).length;
-    $("bySrc").textContent="brumbrum "+nb+" · Achille Car "+(res.length-nb)+(nNew?" · "+nNew+" nuove":"");
+    $("bySrc").textContent=SITES.map(function(n){return n+" "+res.filter(function(c){return c.src===n;}).length;}).join(" · ")+(nNew?" · "+nNew+" nuove":"");
     if(!CARS.length){$("list").innerHTML='<li class="empty">Premi Cerca ora per leggere gli annunci dai siti.</li>';return;}
     if(!res.length){$("list").innerHTML='<li class="empty">Nessuna auto con questi filtri. Alza il prezzo massimo o abbassa l\'anno minimo.</li>';return;}
     $("list").innerHTML=res.map(function(c){
       var disc=c.old?c.old-c.price:0;
       return '<li class="car'+(c.res?' res':'')+'">'+
         '<div><div class="name">'+esc(c.brand+" "+c.model)+'</div><div class="ver">'+esc(c.ver)+'</div></div>'+
-        '<div class="price"><b>'+nf.format(c.price)+' €</b>'+(c.old?'<s>'+nf.format(c.old)+' €</s><em>−'+nf.format(disc)+' €</em>':'')+'</div>'+
+        '<div class="price"><b>'+nf.format(c.price)+' €</b>'+(c.old?'<s>'+nf.format(c.old)+' €</s><em>−'+nf.format(disc)+' €</em>':'')+(c.cash?'<small>solo con finanziamento</small>':'')+'</div>'+
         '<div class="facts"><span>'+esc(c.reg)+'</span><span>'+nf.format(c.km)+' km</span><span>'+esc(c.fuelLabel)+'</span><span>'+esc(c.gear)+'</span>'+(c.cv?'<span>'+c.cv+' CV</span>':'')+(c.body?'<span>'+esc(c.body)+'</span>':'')+'</div>'+
-        '<div class="foot"><div class="tags"><span class="tag '+(c.src==="brumbrum"?"src-b":"src-a")+'">'+esc(c.src)+'</span>'+
+        '<div class="foot"><div class="tags"><span class="tag src-'+(SITES.indexOf(c.src)%4)+'">'+esc(c.src)+'</span>'+
         (c.isNew?'<span class="tag new">Nuova</span>':'')+
         (c.drop?'<span class="tag new">Scesa di '+nf.format(c.drop)+' €</span>':'')+
+        (c.cash?'<span class="tag warn">Senza finanziamento '+nf.format(c.cash)+' €</span>':'')+
         (c.res?'<span class="tag warn">Prenotata</span>':'')+'</div>'+
         '<a class="open" href="'+esc(c.url)+'" target="_blank" rel="noopener">Apri annuncio</a></div></li>';
     }).join("");
@@ -292,6 +300,10 @@ if(typeof document!=="undefined"){(function(){
   function load(data,prev){
     META={updated:data.updated,sources:data.sources};
     CARS=markChanges(data.cars,prev);
+    // I siti arrivano dalla funzione: aggiungerne uno lì lo fa comparire qui da solo.
+    SITES=data.sources.map(function(x){return x.name;});
+    chipButtons($("cSrc"),SITES.map(function(n){return [n,n];}));
+    state.src=state.src.filter(function(n){return SITES.indexOf(n)>=0;});
     fillSelects();
   }
   var busy=false;

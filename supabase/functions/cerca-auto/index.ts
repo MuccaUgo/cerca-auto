@@ -6,6 +6,7 @@ type Car = {
   year: number; reg: string; km: number; price: number; old: number;
   gear: string; res: boolean; fuel: string; fuelLabel: string; cv: number;
   body: string; url: string;
+  cash?: number; // prezzo senza finanziamento, quando il prezzo esposto vale solo finanziando
 };
 type SourceResult = { cars: Car[]; expected: number };
 
@@ -179,9 +180,63 @@ async function achilleCar(): Promise<SourceResult> {
   return { cars, expected: first.total };
 }
 
+// ---------- AM Autoccasione (Milano, sito proprio) ----------
+// Il sito espone titolo e una riga di testo libero: "ANNO 2024'KM: 49'000 € 8'950 SENZA FINANZIAMENTO € 10'450".
+const BRANDS = ["Alfa Romeo", "Land Rover", "Audi", "BMW", "Citroen", "Cupra", "Dacia", "DS", "Fiat", "Ford", "Honda", "Hyundai",
+  "Jeep", "Kia", "Lancia", "Mazda", "Mercedes", "MG", "Mini", "Mitsubishi", "Nissan", "Opel", "Peugeot", "Renault", "Seat",
+  "Skoda", "Smart", "Suzuki", "Toyota", "Volkswagen", "Volvo", "Chevrolet", "Jaguar", "Porsche", "Tesla", "Abarth", "Subaru"];
+const AUDI_MODELS = /^(A[1-8]|Q[2-8]|TT)\b/i;
+const num = (t: string | undefined) => Number(String(t ?? "").replace(/[^\d]/g, "")) || 0;
+const cap = (t: string) => t.length <= 3 ? t.toUpperCase() : t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+
+async function amAutoccasione(): Promise<SourceResult> {
+  const html = await getHtml("https://www.amautoccasione.it/prodotti");
+  const re = /<a href="(https:\/\/www\.amautoccasione\.it\/prodotti\/[^"]+)">[\s\S]*?<h4>([\s\S]*?)<\/h4>\s*<p>([\s\S]*?)<\/p>/g;
+  const cars: Car[] = [];
+  let m: RegExpExecArray | null;
+  let found = 0;
+  while ((m = re.exec(html))) {
+    found++;
+    const title = m[2].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    const desc = m[3].replace(/<[^>]+>/g, " ").replace(/&euro;/g, "€").replace(/\s+/g, " ").trim();
+    const year = Number((desc.match(/ANNO\s*((?:19|20)\d\d)/i) || [])[1]) || 0;
+    const km = num((desc.match(/KM:?\s*([\d'.]+)/i) || [])[1]);
+    const parts = desc.split(/SENZA\s+FINANZIAMENTO/i);
+    const price = num((parts[0].match(/€\s*([\d'.]+)/) || [])[1]);
+    const cash = parts.length > 1 ? num((parts[1].match(/([\d'.]+)/) || [])[1]) : 0;
+    if (!price) continue;
+    let brand = BRANDS.find((b) => title.toLowerCase().startsWith(b.toLowerCase() + " ") || title.toLowerCase() === b.toLowerCase()) ?? "";
+    let rest = brand ? title.slice(brand.length).trim() : title;
+    if (!brand && AUDI_MODELS.test(title)) brand = "Audi";
+    if (!brand) { brand = cap(title.split(" ")[0]); rest = title.split(" ").slice(1).join(" "); }
+    if (brand === "Mercedes") brand = "Mercedes-Benz";
+    const words = rest.split(" ").filter(Boolean);
+    const model = cap(words[0] ?? "");
+    const up = title.toUpperCase();
+    const fuel = /HYBRID|IBRID|E-TECH/.test(up) ? "Ibrida" : /\bGPL\b/.test(up) ? "GPL" : /METANO/.test(up) ? "Metano"
+      : /ELETTRIC|\bBEV\b/.test(up) ? "Elettrica" : /TDI|CDI|DCI|HDI|MJET|MULTIJET|ECOBLUE|CRDI|DIESEL|\bD\b/.test(up) ? "Diesel" : "Benzina";
+    cars.push({
+      src: "AM Autoccasione",
+      id: m[1].split("/prodotti/")[1],
+      brand, model,
+      ver: words.slice(1).join(" "),
+      year, reg: String(year || ""), km, price, old: 0,
+      gear: /DSG|S[- ]?TRONIC|\bAUTO\b|AUTOMATIC|\bEAT\d?\b|CVT|E-TECH|FULL HYBRID/.test(up) ? "Automatico" : "Manuale",
+      res: false, fuel, fuelLabel: fuel,
+      cv: Number((up.match(/(\d{2,3})\s*CV/) || [])[1]) || 0,
+      body: "",
+      url: m[1],
+      cash: cash > price ? cash : 0,
+    });
+  }
+  if (!found) throw new Error("struttura della pagina cambiata (nessun annuncio trovato)");
+  return { cars, expected: found };
+}
+
 const SOURCES: { name: string; site: string; run: () => Promise<SourceResult> }[] = [
   { name: "brumbrum", site: "brumbrum.it", run: brumbrum },
   { name: "Achille Car", site: "achillecar.it (Autoscout24)", run: achilleCar },
+  { name: "AM Autoccasione", site: "amautoccasione.it", run: amAutoccasione },
 ];
 
 Deno.serve(async (req: Request) => {
