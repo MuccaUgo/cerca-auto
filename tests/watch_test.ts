@@ -2,7 +2,7 @@
 import webpush from 'npm:web-push@3.6.7';
 import ece from 'npm:http_ece@1.2.0';
 import { createECDH, randomBytes } from 'node:crypto';
-import { notification, observeCars } from '../supabase/functions/cerca-auto-watch/helpers.ts';
+import { matchesWatch, notification, observeCars } from '../supabase/functions/cerca-auto-watch/helpers.ts';
 
 Deno.env.set('SUPABASE_URL', 'https://proj.test'); Deno.env.set('SUPABASE_SERVICE_ROLE_KEY', 'svc'); Deno.env.set('SUPABASE_ANON_KEY', 'anon');
 const vapid = webpush.generateVAPIDKeys();
@@ -137,6 +137,7 @@ for (const [checkedAt, expected] of [['2026-11-17T09:00:00Z', '10:00'], ['2026-0
 
 // titoli
 const car = mk('brumbrum', 'X', 8950);
+check('auto non disponibile esclusa dagli avvisi', matchesWatch({ ...car, unavailable: true }), false);
 check('titolo 1 nuova', notification([{ car }], 't').title, 'Una nuova auto su Cerca auto');
 check('titolo 2 nuove', notification([{ car }, { car }], 't').title, '2 nuove auto su Cerca auto');
 check('titolo 2 ribassi', notification([{ car, from: 10500 }, { car, from: 11000 }], 't').title, '2 auto sono scese sotto i 10.000 €');

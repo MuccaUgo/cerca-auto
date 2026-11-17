@@ -66,3 +66,12 @@ test('ranking preserves filter and AI export behavior without mutating source da
   assert.match(exported,/Prezzo con finanziamento: 8\.000 €/);assert.match(exported,/Prezzo senza finanziamento: 10\.500 €/);
   assert.equal(applyFilters(data,{...state,text:'Aygo'},ratings).length,0);
 });
+test('regional listings count actual sellers and keep private/dealer comparisons separate',()=>{
+  const data=market().map((c,i)=>({...c,src:'AutoScout24 Lombardia',sellerId:'seller'+i,sellerType:'dealer'}));
+  assert.equal(Deals.calculate(data,2026)[Deals.key(data[0])].sellers,3);
+  assert.equal(Deals.calculate(data.map(c=>({...c,sellerId:'one-seller'})),2026)[Deals.key(data[0])],undefined);
+  assert.equal(Deals.calculate(data.map((c,i)=>i?c:{...c,sellerType:'private'}),2026)[Deals.key(data[0])],undefined);
+  const ratings=Deals.calculate(data,2026);
+  assert.equal(applyFilters(data,{...DEFAULTS,price:20000,seller:'private'},ratings).length,0);
+  assert.equal(applyFilters(data,{...DEFAULTS,price:20000,seller:'dealer'},ratings).length,4);
+});
