@@ -7,6 +7,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Cerca auto">
 <meta name="theme-color" content="#c2410c">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -35,10 +37,35 @@
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45}
-.wrap{max-width:860px;margin:0 auto;padding:20px 16px 48px;display:flex;flex-direction:column;gap:16px}
+.wrap{max-width:860px;margin:0 auto;padding:16px 16px 48px;display:flex;flex-direction:column;gap:12px}
 header{display:flex;flex-direction:column;gap:4px}
 h1{font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:-.01em;margin:0;text-wrap:balance}
-.top{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between}
+.top{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.top h1{font-size:24px}
+.top .actions{gap:6px}
+.top .btn{font-size:14px;padding:10px 12px;min-height:44px}
+.top .btn.ghost{font-size:13px}
+.panel.filters{padding:12px;gap:10px}
+.filter-options{position:relative}
+.filter-options > .link{position:absolute;right:0;top:0;min-height:36px;font-size:12px}
+.advanced-filters > summary{cursor:pointer;min-height:36px;padding:8px 92px 8px 0;font-size:13px;font-weight:600;color:var(--accent)}
+.filter-count{font-size:11px;background:var(--chip);color:var(--ink);padding:2px 6px;border-radius:999px;margin-left:6px;white-space:nowrap}
+.advanced-content{display:flex;flex-direction:column;gap:12px;padding-top:8px;border-top:1px solid var(--line)}
+.source-summary{font-size:12px;color:var(--muted)}
+.sort-control{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.sort-control select{width:155px;min-height:36px;padding:6px;font-size:13px}
+.app-footer{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.app-footer .link{font-size:12px}
+.watch-dialog{color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:12px;width:calc(100% - 32px);max-width:520px;padding:20px}
+.watch-dialog::backdrop{background:#0008}
+.watch-dialog h2{font-family:var(--display);font-size:21px;margin:0}
+.watch-dialog p{font-size:14px}
+.watch-dialog .watch-times{display:flex;gap:8px;margin:12px 0}
+.watch-times span{background:var(--chip);padding:5px 10px;border-radius:6px;font-weight:600;font-variant-numeric:tabular-nums}
+.watch-hint{font-size:13px;color:var(--muted);line-height:1.5}
+.watch-dialog .actions{margin-top:12px}
+.watch-close{font:inherit;border:0;background:none;color:var(--ink);cursor:pointer;padding:8px;font-size:20px;line-height:1}
+.watch-dialog [hidden]{display:none!important}
 .btn{font-family:var(--display);font-weight:700;font-size:16px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:11px 20px;min-height:46px;cursor:pointer}
 .btn:disabled{opacity:.6;cursor:progress}
 .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);font-family:var(--body);font-weight:600;font-size:14px;padding:11px 14px}
@@ -97,7 +124,7 @@ a.open{font-size:13px;font-weight:600;color:var(--accent)}
 .car-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
 .select-car{font-size:13px;cursor:pointer;min-height:36px}
 .selection-tools{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 12px}
-.selection-help,.selection-note{font-size:12px;color:var(--muted)}
+.selection-note{font-size:12px;color:var(--muted)}
 .selection-note:empty{display:none}
 .selection-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom,0px));width:calc(100% - 32px);max-width:828px;z-index:5;box-shadow:0 6px 28px #0003;gap:6px}
 .selection-bar[hidden]{display:none}
@@ -120,14 +147,14 @@ body.has-selection .wrap{padding-bottom:190px}
     <div class="top">
       <h1>Cerca auto</h1>
       <div class="actions">
-        <button class="btn ghost" id="upd" type="button" title="Scarica l'ultima versione della pagina">Aggiorna app</button>
+        <button class="btn ghost" id="watchToggle" type="button" aria-haspopup="dialog">Avvisi</button>
         <button class="btn" id="go" type="button">Cerca ora</button>
       </div>
     </div>
     <div class="status" id="status" role="status" aria-live="polite"></div>
   </header>
 
-  <section class="panel" aria-label="Filtri">
+  <section class="panel filters" aria-label="Filtri">
     <div class="grid">
       <label class="f" for="fPrice">Prezzo massimo (€)
         <input id="fPrice" type="number" inputmode="numeric" min="0" step="500" placeholder="Nessun limite">
@@ -145,40 +172,50 @@ body.has-selection .wrap{padding-bottom:190px}
           <option value="125000">125.000</option>
         </select>
       </label>
-      <label class="f" for="fBrand">Marca
-        <select id="fBrand"><option value="">Tutte</option></select>
-      </label>
-      <label class="f" for="fBody">Carrozzeria
-        <select id="fBody"><option value="">Tutte</option></select>
-      </label>
-      <label class="f" for="fSort">Ordina per
-        <select id="fSort">
-          <option value="price">Prezzo più basso</option>
-          <option value="km">Meno km</option>
-          <option value="year">Più recente</option>
-          <option value="disc">Sconto maggiore</option>
-        </select>
-      </label>
       <label class="f" for="fText">Cerca modello
         <input id="fText" type="search" placeholder="es. Panda">
       </label>
     </div>
-    <div class="group"><span>Alimentazione</span><div class="chips" id="cFuel"></div></div>
-    <div class="group"><span>Cambio</span><div class="chips" id="cGear"></div></div>
-    <div class="group"><span>Sito</span><div class="chips" id="cSrc"></div></div>
-    <div class="row">
-      <label class="check" for="fRes"><input id="fRes" type="checkbox"> Nascondi le auto già prenotate</label>
-      <label class="check" for="fDisc"><input id="fDisc" type="checkbox"> Solo prezzi ribassati</label>
-      <label class="check" for="fClean"><input id="fClean" type="checkbox"> Nascondi prezzi vincolati o da verificare</label>
-      <label class="check" for="fFresh"><input id="fFresh" type="checkbox"> Solo novità dall'ultima ricerca</label>
-      <button class="link" id="reset" type="button">Ripristina filtri</button>
+    <div class="filter-options">
+      <details class="advanced-filters" id="advancedFilters">
+        <summary>Altri filtri <span class="filter-count" id="advancedCount" hidden></span></summary>
+        <div class="advanced-content">
+          <div class="grid">
+            <label class="f" for="fBrand">Marca
+              <select id="fBrand"><option value="">Tutte</option></select>
+            </label>
+            <label class="f" for="fBody">Carrozzeria
+              <select id="fBody"><option value="">Tutte</option></select>
+            </label>
+          </div>
+          <div class="group"><span>Alimentazione</span><div class="chips" id="cFuel"></div></div>
+          <div class="group"><span>Cambio</span><div class="chips" id="cGear"></div></div>
+          <div class="group"><span>Sito</span><div class="chips" id="cSrc"></div><div class="source-summary" id="bySrc"></div></div>
+          <div class="row">
+            <label class="check" for="fRes"><input id="fRes" type="checkbox"> Nascondi le auto già prenotate</label>
+            <label class="check" for="fDisc"><input id="fDisc" type="checkbox"> Solo prezzi ribassati</label>
+            <label class="check" for="fClean"><input id="fClean" type="checkbox"> Nascondi prezzi vincolati o da verificare</label>
+            <label class="check" for="fFresh"><input id="fFresh" type="checkbox"> Solo novità dall'ultima ricerca</label>
+          </div>
+        </div>
+      </details>
+      <button class="link" id="reset" type="button" aria-label="Ripristina filtri">Ripristina</button>
     </div>
   </section>
 
-  <div class="summary"><div><b id="count">0</b> <span id="countLabel"></span></div><span id="bySrc"></span></div>
+  <div class="summary">
+    <div><b id="count">0</b> <span id="countLabel"></span></div>
+    <label class="sort-control" for="fSort">Ordina per
+      <select id="fSort">
+        <option value="price">Prezzo più basso</option>
+        <option value="km">Meno km</option>
+        <option value="year">Più recente</option>
+        <option value="disc">Sconto maggiore</option>
+      </select>
+    </label>
+  </div>
   <div class="selection-tools">
     <button class="link" id="selectVisible" type="button" disabled>Seleziona i risultati</button>
-    <span class="selection-help">La selezione resta anche cambiando i filtri.</span>
   </div>
   <div class="selection-note" id="selectionNotice" role="status" aria-live="polite"></div>
   <ul class="list" id="list"></ul>
@@ -199,7 +236,7 @@ body.has-selection .wrap{padding-bottom:190px}
     <div>Prezzo senza vincoli dichiarato: l'annuncio scrive "prezzo reale" o "nessun vincolo di finanziamento". È una dichiarazione del venditore, non una verifica. Passaggio di proprietà e IPT sono di norma esclusi dal prezzo.</div>
     <div>Privacar è un'agenzia che vende auto di privati: sul venditore non grava la garanzia legale di conformità che vale per i concessionari; chiedi quale garanzia è inclusa e a che prezzo.</div>
     <div>AM Autoccasione espone prezzi validi solo con finanziamento: il filtro usa quel prezzo, l'etichetta gialla indica quanto costa senza. Per le sue auto alimentazione e cambio sono dedotti dal titolo dell'annuncio.</div>
-    <div class="ver-app" id="appver"></div>
+    <div class="app-footer"><span class="ver-app" id="appver"></span><button class="link" id="upd" type="button" title="Scarica l'ultima versione della pagina">Aggiorna app</button></div>
     <div>Le etichette Nuova e Scesa di prezzo confrontano la ricerca con quella precedente fatta da questo dispositivo.</div>
   </div>
 </div>
@@ -215,12 +252,28 @@ body.has-selection .wrap{padding-bottom:190px}
   </div>
 </dialog>
 
+<dialog class="watch-dialog" id="watchDialog" aria-labelledby="watchTitle">
+  <div class="row"><h2 id="watchTitle">Avvisi nuovi annunci</h2><button class="watch-close" id="watchClose" type="button" aria-label="Chiudi avvisi">×</button></div>
+  <p>Auto fino a <strong>10.000 €</strong>, immatricolate dal <strong>2020</strong>, dalle fonti attive. Solo nuovi annunci disponibili.</p>
+  <div class="watch-times" aria-label="Orari dei controlli"><span>10:00</span><span>14:00</span><span>18:00</span></div>
+  <p class="watch-hint">Ora italiana, anche con la webapp chiusa. Il prezzo con finanziamento viene segnalato come tale.</p>
+  <p class="watch-hint" id="watchSetup"></p>
+  <p class="watch-hint" id="watchLastRun"></p>
+  <div class="watch-hint" id="watchRecent" hidden></div>
+  <p class="status" id="watchStatus" role="status" aria-live="polite"></p>
+  <div class="actions">
+    <button class="btn" id="watchEnable" type="button" disabled>Attiva notifiche</button>
+    <button class="btn ghost" id="watchTest" type="button" hidden>Invia una prova</button>
+    <button class="link" id="watchDisable" type="button" hidden>Disattiva su questo dispositivo</button>
+  </div>
+</dialog>
+
 <script>
 var FUNCTION_URL = "https://udhrplrxqxgiafwxtbqe.supabase.co/functions/v1/cerca-auto";
 // Chiave pubblica (anon) del progetto Supabase: serve solo a chiamare la funzione.
 var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHJwbHJ4cXhnaWFmd3h0YnFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4NzMxNDYsImV4cCI6MjExMDQ0OTE0Nn0.IGw8x9AdKhWRMfIcU3CG7dHjbBQACOn1qlqDA75cNmo";
 
-var APP_VERSION = "8 · 17 nov 2026";
+var APP_VERSION = "9 · 17 nov 2026";
 
 var DEFAULTS={price:10000,year:2020,km:0,brand:"",body:"",sort:"price",text:"",fuel:[],gear:"",src:[],res:false,disc:false,fresh:false,clean:false};
 
@@ -438,7 +491,10 @@ if(typeof document!=="undefined"){(function(){
     store.set("cerca-auto-filtri",state);
     var res=applyFilters(CARS,state);
     $("count").textContent=res.length;
-    $("countLabel").textContent=(res.length===1?"auto trovata":"auto trovate")+" su "+CARS.length+" lette";
+    $("countLabel").textContent="auto su "+nf.format(CARS.length);
+    var advanced=[state.brand,state.body,state.fuel.length,state.gear,state.src.length,state.res,state.disc,state.fresh,state.clean].filter(Boolean).length;
+    $("advancedCount").hidden=!advanced;
+    $("advancedCount").textContent=advanced+" attiv"+(advanced===1?"o":"i");
     var nNew=res.filter(function(c){return c.isNew;}).length;
     $("bySrc").textContent=SITES.map(function(n){return [n,res.filter(function(c){return c.src===n;}).length];}).filter(function(x){return x[1];}).map(function(x){return x[0]+" "+x[1];}).join(" · ")+(nNew?" · "+nNew+" nuove":"");
     syncSelection(res);
@@ -523,5 +579,6 @@ if(typeof document!=="undefined"){(function(){
 })();}
 if(typeof module!=="undefined") module.exports={applyFilters:applyFilters,markChanges:markChanges,priceMap:priceMap,DEFAULTS:DEFAULTS,formatListingsForAI:formatListingsForAI};
 </script>
+<script src="./notifications.js?v=9"></script>
 </body>
 </html>

@@ -2,6 +2,38 @@
 
 Pagina unica che legge in tempo reale gli annunci di auto usate da più siti e li filtra.
 
+L'interfaccia mostra prezzo, anno, chilometri e modello; marca, alimentazione,
+cambio e rivenditori sono nel pannello **Altri filtri**. Le auto selezionate
+restano selezionate passando da un filtro all'altro e **Copia per AI** esporta
+caratteristiche, link e condizioni di prezzo.
+
+## Avvisi dalla webapp
+
+Il pulsante **Avvisi** attiva Web Push sul dispositivo. Su iPhone/iPad occorre
+aggiungere la webapp alla schermata Home e aprirla dall'icona. Il consenso è
+richiesto solo quando si tocca **Attiva notifiche**; è disponibile una prova
+e la disattivazione per il singolo dispositivo.
+
+Il server controlla le fonti alle **10:00, 14:00 e 18:00 Europe/Rome** e segnala
+nuovi annunci disponibili fino a **10.000 €**, immatricolati dal **2020**.
+I prezzi pubblicizzati con finanziamento sono indicati come tali. Il primo
+controllo crea lo storico senza notificare lo stock già esistente; una fonte
+che sparisce temporaneamente non cancella lo storico.
+
+- `manifest.webmanifest`, icone e `sw.js`: installazione e ricezione delle push.
+- `notifications.js`: attivazione, prova, ultimo avviso e disattivazione.
+- `supabase/functions/cerca-auto-watch/`: scansioni, deduplicazione e invio.
+- `supabase/car-watch.sql`: tabelle con RLS e funzioni riservate al server.
+- `supabase/car-watch-schedule.sql`: pianificazione con cambio ora automatico.
+
+Le chiavi VAPID e il token del job sono in Supabase Vault, mai nel repository.
+I nomi sono `cerca_auto_vapid` (JSON `publicKey`/`privateKey`) e
+`cerca_auto_cron_secret`. `cerca_auto_anon` contiene il JWT anon pubblico del
+progetto per il gateway; la scansione richiede anche il token privato.
+La funzione `cerca-auto-watch` mantiene la verifica JWT attiva. Endpoint e
+chiavi delle sottoscrizioni sono accessibili solo al server; il client riceve
+un token per gestire esclusivamente la propria sottoscrizione.
+
 - `index.html` — la pagina (GitHub Pages). Il tasto **Cerca ora** chiama la funzione Supabase.
 - `supabase/functions/cerca-auto/index.ts` — la funzione che legge i siti e restituisce un JSON unico.
 
