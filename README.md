@@ -7,20 +7,21 @@ Pagina unica che legge in tempo reale gli annunci di auto usate da più siti e l
 
 ## Siti letti
 
-| Sito | Da dove |
-| --- | --- |
-| brumbrum.it | catalogo `/auto/usata`, tutte le pagine |
-| achillecar.it | inventario del concessionario su Autoscout24 |
-| Lanzocar (Cologno Monzese) | inventario su Autoscout24 |
-| Little Cars 3 (Sesto San Giovanni) | inventario su Autoscout24 |
-| Broker Mobility (Milano) | inventario su Autoscout24 |
-| amautoccasione.it | pagina `/prodotti` del sito (prezzi validi solo con finanziamento: il prezzo senza è nel campo `cash`) |
+- **brumbrum.it** — catalogo `/auto/usata`, tutte le pagine.
+- **amautoccasione.it** — pagina `/prodotti` (prezzi validi solo con finanziamento: il prezzo senza è nel campo `cash`).
+- **Concessionari su Autoscout24** — elencati nella tabella Supabase `public.dealers` (Achille Car, Lanzocar, Little Cars 3, Broker Mobility, Auto Occasioni Milano, Autonobile, STAV, Privacar...).
 
-## Aggiungere un sito
+## Aggiungere un concessionario
 
-Se il concessionario pubblica su Autoscout24 basta una riga in `SOURCES`: `autoscoutDealer("Nome", "slug-della-pagina")`.
+Se pubblica su Autoscout24 basta una riga nella tabella `public.dealers`, senza toccare il codice:
 
-In `index.ts` scrivi una funzione che restituisce `{ cars, expected }` nel formato `Car` e aggiungila a `SOURCES`. Poi ripubblica la funzione su Supabase (progetto `cerca-auto`). La pagina mostra da sola il nuovo sito tra i filtri.
+```sql
+insert into public.dealers(slug, name, place, note, pos)
+values ('slug-della-pagina-autoscout24', 'Nome', 'Comune', '', 200);
+```
+
+`slug` è la parte finale di `autoscout24.it/concessionari/<slug>`; `note` è un'avvertenza mostrata su ogni sua auto; `enabled = false` lo spegne.
+Per un sito diverso serve una funzione in `index.ts` che restituisce `{ cars, expected }`, da aggiungere a `own`.
 
 ## Note
 

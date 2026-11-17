@@ -161,8 +161,9 @@ a.open{font-size:13px;font-weight:600;color:var(--accent)}
   <ul class="list" id="list"></ul>
 
   <div class="note">
-    <div>Cerca ora legge in quel momento tutti gli annunci di brumbrum.it, AM Autoccasione e, dalle loro pagine Autoscout24, di Achille Car, Lanzocar, Little Cars 3 e Broker Mobility. Prezzo e disponibilità vanno sempre confermati sull'annuncio.</div>
+    <div>Cerca ora legge in quel momento tutti gli annunci di brumbrum.it, di AM Autoccasione e, dalle loro pagine Autoscout24, dei concessionari elencati nel filtro Sito. Prezzo e disponibilità vanno sempre confermati sull'annuncio.</div>
     <div>Prezzo senza vincoli dichiarato: l'annuncio scrive "prezzo reale" o "nessun vincolo di finanziamento". È una dichiarazione del venditore, non una verifica. Passaggio di proprietà e IPT sono di norma esclusi dal prezzo.</div>
+    <div>Privacar è un'agenzia che vende auto di privati: sul venditore non grava la garanzia legale di conformità che vale per i concessionari; chiedi quale garanzia è inclusa e a che prezzo.</div>
     <div>AM Autoccasione espone prezzi validi solo con finanziamento: il filtro usa quel prezzo, l'etichetta gialla indica quanto costa senza. Per le sue auto alimentazione e cambio sono dedotti dal titolo dell'annuncio.</div>
     <div class="ver-app" id="appver"></div>
     <div>Le etichette Nuova e Scesa di prezzo confrontano la ricerca con quella precedente fatta da questo dispositivo.</div>
@@ -174,7 +175,7 @@ var FUNCTION_URL = "https://udhrplrxqxgiafwxtbqe.supabase.co/functions/v1/cerca-
 // Chiave pubblica (anon) del progetto Supabase: serve solo a chiamare la funzione.
 var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHJwbHJ4cXhnaWFmd3h0YnFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4NzMxNDYsImV4cCI6MjExMDQ0OTE0Nn0.IGw8x9AdKhWRMfIcU3CG7dHjbBQACOn1qlqDA75cNmo";
 
-var APP_VERSION = "6 · 17 nov 2026";
+var APP_VERSION = "7 · 17 nov 2026";
 
 var DEFAULTS={price:10000,year:2020,km:0,brand:"",body:"",sort:"price",text:"",fuel:[],gear:"",src:[],res:false,disc:false,fresh:false,clean:false};
 
@@ -280,11 +281,12 @@ if(typeof document!=="undefined"){(function(){
     var el=$("status"); el.className="status"+(isError?" err":"");
     if(msg){el.textContent=msg;return;}
     if(!META){el.textContent="Nessuna ricerca ancora. Premi Cerca ora.";return;}
-    var parts=META.sources.map(function(s){
-      if(!s.ok) return s.name+": non raggiungibile";
-      return s.name+" "+s.got+(s.got<s.expected?" di "+s.expected:"")+" auto";
+    var okN=META.sources.filter(function(s){return s.ok;}).length;
+    var tot=META.sources.reduce(function(a,s){return a+s.got;},0);
+    var bad=META.sources.filter(function(s){return !s.ok||s.got<s.expected;}).map(function(s){
+      return s.ok ? s.name+" "+s.got+" di "+s.expected : s.name+" non raggiungibile";
     });
-    el.textContent="Ultima ricerca: "+when(META.updated)+" · "+parts.join(" · ");
+    el.textContent="Ultima ricerca: "+when(META.updated)+" · "+tot+" auto da "+okN+" siti su "+META.sources.length+(bad.length?" · "+bad.join(" · "):"");
     if(META.sources.some(function(s){return !s.ok||s.got<s.expected;})) el.className="status err";
   }
   function render(fromInput){
@@ -295,7 +297,7 @@ if(typeof document!=="undefined"){(function(){
     $("count").textContent=res.length;
     $("countLabel").textContent=(res.length===1?"auto trovata":"auto trovate")+" su "+CARS.length+" lette";
     var nNew=res.filter(function(c){return c.isNew;}).length;
-    $("bySrc").textContent=SITES.map(function(n){return n+" "+res.filter(function(c){return c.src===n;}).length;}).join(" · ")+(nNew?" · "+nNew+" nuove":"");
+    $("bySrc").textContent=SITES.map(function(n){return [n,res.filter(function(c){return c.src===n;}).length];}).filter(function(x){return x[1];}).map(function(x){return x[0]+" "+x[1];}).join(" · ")+(nNew?" · "+nNew+" nuove":"");
     if(!CARS.length){$("list").innerHTML='<li class="empty">Premi Cerca ora per leggere gli annunci dai siti.</li>';return;}
     if(!res.length){$("list").innerHTML='<li class="empty">Nessuna auto con questi filtri. Alza il prezzo massimo o abbassa l\'anno minimo.</li>';return;}
     $("list").innerHTML=res.map(function(c){

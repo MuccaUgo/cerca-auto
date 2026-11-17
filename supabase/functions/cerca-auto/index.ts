@@ -1,5 +1,6 @@
 // Cerca auto — legge in tempo reale gli annunci dei siti configurati e li restituisce in un formato unico.
-// Per aggiungere un sito: scrivere una funzione che restituisce { cars, expected } e aggiungerla a SOURCES.
+// Concessionari con pagina Autoscout24: una riga nella tabella public.dealers.
+// Altri siti: scrivere una funzione che restituisce { cars, expected } e aggiungerla a `own` in fondo.
 
 type Car = {
   src: string; id: string; brand: string; model: string; ver: string;
@@ -135,7 +136,7 @@ async function brumbrum(): Promise<SourceResult> {
 const REAL_PRICE = /PREZZO\s+REALE|NO\s+VINCOL|SENZA\s+VINCOL|NESSUN\s+VINCOL|NO\s+OBBLIGO|SENZA\s+OBBLIGO|NESSUN\s+OBBLIGO/i;
 const TEASER = /DIVERSI\s+COLORI|EXTRA-?SCONTO|PREZZO\s*\+\s*IVA/i;
 
-function autoscoutDealer(name: string, slug: string): () => Promise<SourceResult> {
+function autoscoutDealer(name: string, slug: string, dealerNote = ""): () => Promise<SourceResult> {
   return async () => {
     const base = "https://www.autoscout24.it/concessionari/" + slug;
     const parse = (html: string) => {
@@ -184,7 +185,7 @@ function autoscoutDealer(name: string, slug: string): () => Promise<SourceResult
         body: String(v.bodyType?.formatted ?? ""),
         url: "https://www.autoscout24.it" + l.url,
         real: REAL_PRICE.test(rawTitle),
-        note: TEASER.test(rawTitle) ? "Annuncio generico: prezzo e km da verificare" : "",
+        note: [dealerNote, TEASER.test(rawTitle) ? "Annuncio generico: prezzo e km da verificare" : ""].filter(Boolean).join(" · "),
       });
     }
     return { cars, expected: first.total };
@@ -244,31 +245,65 @@ async function amAutoccasione(): Promise<SourceResult> {
   return { cars, expected: found };
 }
 
-const SOURCES: { name: string; site: string; run: () => Promise<SourceResult> }[] = [
-  { name: "brumbrum", site: "brumbrum.it", run: brumbrum },
-  { name: "Achille Car", site: "achillecar.it (Autoscout24)", run: autoscoutDealer("Achille Car", "achille-car-srl") },
-  { name: "AM Autoccasione", site: "amautoccasione.it", run: amAutoccasione },
-  { name: "Lanzocar", site: "Cologno Monzese (Autoscout24)", run: autoscoutDealer("Lanzocar", "lanzocar-srl") },
-  { name: "Little Cars 3", site: "Sesto San Giovanni (Autoscout24)", run: autoscoutDealer("Little Cars 3", "little-cars-3-di-500cars-snc") },
-  { name: "Broker Mobility", site: "Milano (Autoscout24)", run: autoscoutDealer("Broker Mobility", "brokermobility-by-rent-76-srl") },
+type Source = { name: string; site: string; run: () => Promise<SourceResult> };
+type Dealer = { slug: string; name: string; place: string; note: string };
+
+// Elenco di riserva, usato solo se la tabella "dealers" non si legge.
+const FALLBACK_DEALERS: Dealer[] = [
+  { slug: "achille-car-srl", name: "Achille Car", place: "Milano", note: "" },
+  { slug: "lanzocar-srl", name: "Lanzocar", place: "Cologno Monzese", note: "" },
+  { slug: "little-cars-3-di-500cars-snc", name: "Little Cars 3", place: "Sesto San Giovanni", note: "" },
+  { slug: "brokermobility-by-rent-76-srl", name: "Broker Mobility", place: "Milano", note: "" },
 ];
+
+// I concessionari Autoscout24 stanno nella tabella public.dealers: per aggiungerne uno basta una riga lì.
+async function loadDealers(): Promise<Dealer[]> {
+  try {
+    const url = Deno.env.get("SUPABASE_URL");
+    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!url || !key) return FALLBACK_DEALERS;
+    const r = await fetch(url + "/rest/v1/dealers?select=slug,name,place,note&enabled=is.true&order=pos", {
+      headers: { apikey: key, Authorization: "Bearer " + key },
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const rows = (await r.json()) as Dealer[];
+    return rows.length ? rows : FALLBACK_DEALERS;
+  } catch (e) {
+    console.error("tabella dealers non letta: " + String((e as Error).message ?? e));
+    return FALLBACK_DEALERS;
+  }
+}
+
+async function runSource(s: Source) {
+  try {
+    const r = await s.run();
+    return { name: s.name, site: s.site, ok: true, expected: r.expected, got: r.cars.length, error: "", cars: r.cars };
+  } catch (e) {
+    console.error(s.name + " non letto: " + String((e as Error).message ?? e));
+    return { name: s.name, site: s.site, ok: false, expected: 0, got: 0, error: String((e as Error).message ?? e), cars: [] as Car[] };
+  }
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const headers = { ...CORS, "Content-Type": "application/json; charset=utf-8" };
   if (cache && Date.now() - cache.at < CACHE_MS) return new Response(cache.body, { headers });
 
-  const results = await Promise.all(
-    SOURCES.map(async (s) => {
-      try {
-        const r = await s.run();
-        return { name: s.name, site: s.site, ok: true, expected: r.expected, got: r.cars.length, error: "", cars: r.cars };
-      } catch (e) {
-        console.error(s.name + " non letto: " + String((e as Error).message ?? e));
-        return { name: s.name, site: s.site, ok: false, expected: 0, got: 0, error: String((e as Error).message ?? e), cars: [] as Car[] };
-      }
-    }),
-  );
+  const own: Source[] = [
+    { name: "brumbrum", site: "brumbrum.it", run: brumbrum },
+    { name: "AM Autoccasione", site: "amautoccasione.it", run: amAutoccasione },
+  ];
+  const dealers: Source[] = (await loadDealers()).map((d) => ({
+    name: d.name,
+    site: d.place + " (Autoscout24)",
+    run: autoscoutDealer(d.name, d.slug, d.note ?? ""),
+  }));
+  // I siti propri in parallelo; i concessionari Autoscout24 tre alla volta per non caricare troppo il sito.
+  const [ownRes, dealerRes] = await Promise.all([
+    Promise.all(own.map(runSource)),
+    inBatches(dealers, 3, runSource),
+  ]);
+  const results = [...ownRes, ...dealerRes];
   const body = JSON.stringify({
     updated: new Date().toISOString(),
     sources: results.map(({ cars: _c, ...meta }) => meta),
