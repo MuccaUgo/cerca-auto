@@ -7,6 +7,48 @@ cambio e rivenditori sono nel pannello **Altri filtri**. Le auto selezionate
 restano selezionate passando da un filtro all'altro e **Copia per AI** esporta
 caratteristiche, link e condizioni di prezzo.
 
+## Migliori affari
+
+Il riquadro richiudibile **Migliori affari** mostra fino a tre opportunità nei
+filtri attivi. **Ordina per convenienza** e l'ordinamento **Migliori affari**
+portano le auto segnalate in cima alla lista. Ogni segnalazione spiega la
+differenza rispetto ai confronti, la loro mediana e il numero di annunci e
+venditori. Se il campione non basta, il riquadro lo dice senza forzare risultati.
+
+L'algoritmo locale in `deals.js` usa tutti gli annunci dell'ultima ricerca,
+prima dei filtri, e non il campo `deal` eventualmente restituito dal server:
+
+1. Raggruppa stessa marca/modello, alimentazione e cambio; distingue cabrio,
+   trazione integrale e tipologie ibride quando esplicite. Richiede potenza
+   entro il 15%, dati essenziali validi e un link HTTP(S).
+2. Per ogni candidata sceglie auto dello stesso anno o al massimo due anni
+   più vecchie, con chilometraggio uguale o fino a 40.000 km maggiore. Non
+   mette la candidata a confronto con auto più nuove o con meno chilometri.
+3. Elimina URL duplicati, tiene i tre confronti più vicini per venditore e
+   richiede almeno tre confronti di almeno due venditori diversi.
+4. Usa la mediana dei prezzi di questi confronti. La candidata deve costare
+   almeno il 5% e 500 € in meno; scarti oltre il 35% vengono esclusi perché
+   troppo anomali per una segnalazione automatica.
+5. Usa il prezzo senza finanziamento (`cash`) quando noto. Un `cash` non
+   valido non viene sostituito con quello promozionale. Nell'ordinamento
+   Migliori affari anche il filtro di budget usa questo prezzo.
+6. Ordina per vantaggio percentuale, sottraendo 2 punti ai prezzi promozionali
+   con cash noto e 4 quando i vincoli non sono verificati. A parità usa la
+   differenza in euro, il prezzo e un identificatore stabile.
+
+Prenotate, annunci con avvertenze, veicoli commerciali/van o a due posti,
+chilometri zero e dati essenziali mancanti sono esclusi sia dalle candidate
+sia dai confronti. I limiti sono in `RULES`. I ribassi pubblicizzati, da soli,
+non migliorano il punteggio. Il calcolo viene aggiornato a ogni ricerca;
+cambiare filtri non altera il campione di riferimento.
+
+È una stima relativa agli annunci raccolti, non una quotazione ufficiale né
+una verifica meccanica. Generazione, allestimento, manutenzione, incidenti,
+garanzia e costi aggiuntivi non sono verificati dall'algoritmo. I prezzi senza
+vincoli restano dichiarazioni dei venditori.
+
+Test: `node --test tests/deals.test.cjs` (nessuna dipendenza aggiuntiva).
+
 ## Avvisi dalla webapp
 
 Il pulsante **Avvisi** attiva Web Push sul dispositivo. Su iPhone/iPad occorre
