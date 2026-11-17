@@ -95,9 +95,46 @@ un token per gestire esclusivamente la propria sottoscrizione.
 
 ## Siti letti
 
+- **AutoScout24 Lombardia** — ricerca generale, anche di privati, con prezzo
+  pubblicizzato fino a 10.000 € e immatricolazione dal 2020. Le auto dei saloni
+  già configurati restano associate alla loro fonte; gli ID AutoScout24 duplicati
+  compaiono una sola volta. Il filtro **Venditore** separa privati e concessionari.
 - **brumbrum.it** — catalogo `/auto/usata`, tutte le pagine.
 - **amautoccasione.it** — pagina `/prodotti` (prezzi validi solo con finanziamento: il prezzo senza è nel campo `cash`).
 - **Concessionari su Autoscout24** — elencati nella tabella Supabase `public.dealers` (Achille Car, Lanzocar, Little Cars 3, Broker Mobility, Auto Occasioni Milano, Autonobile, STAV, Privacar...).
+
+### Copertura Lombardia e limiti
+
+`supabase/functions/cerca-auto/lombardia.ts` costruisce la ricerca pubblica
+`/lst`, pagina i risultati a 100 annunci per pagina e ricontrolla prezzo e anno
+su ogni scheda. Il collegamento regionale del portale usa un raggio, non i
+confini della regione: la raccolta usa 200 km dal centro proposto dal portale
+(45.66667, 9.5) e accetta solo venditori italiani con CAP nei settori 20–27
+o 46 (Mantova). Località mancanti o non verificabili sono escluse.
+
+La risposta include `coverage`: pagine lette/attese, risultati della ricerca,
+ID unici letti ed esclusioni geografiche. Il limite è 80 pagine e 75 secondi
+per la fonte. Pagine mancanti, filtri rimossi dal portale o cambi di struttura
+non vengono trattati come una raccolta completa. Il portale può modificare
+l'ordine e il contenuto mentre si sfogliano le pagine: non è una garanzia di
+copertura assoluta di ogni annuncio AutoScout24.
+
+Il limite di 10.000 € / anno 2020 riguarda questa fonte aggiuntiva, anche se i
+filtri della webapp vengono ampliati. È un limite sul prezzo pubblicizzato:
+eventuali condizioni vengono evidenziate e non si presume un prezzo senza
+finanziamento se non indicato. Non si raccolgono telefoni, vie o nomi dei
+venditori privati. Per i migliori affari, i saloni vengono contati tramite
+identità del venditore e i privati sono confrontati con altri privati.
+
+Gli avvisi usano lo stesso catalogo: la nuova fonte prepara uno storico iniziale
+senza notificare tutto lo stock preesistente. I saloni già configurati mantengono
+il loro nome anche quando i dati provengono dalla ricerca regionale, conservando
+le chiavi dello storico. Un annuncio nuovo per la webapp non implica che sia
+stato appena pubblicato sul portale.
+
+Test: `node --test tests/lombardia.test.cjs tests/deals.test.cjs`.
+Il modulo `supabase/functions/cerca-auto/deals.ts`, già presente nella funzione
+distribuita, viene conservato; la classifica visibile continua a usare `deals.js`.
 
 ## Aggiungere un concessionario
 

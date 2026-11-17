@@ -206,6 +206,9 @@ body.has-selection .wrap{padding-bottom:190px}
             <label class="f" for="fBody">Carrozzeria
               <select id="fBody"><option value="">Tutte</option></select>
             </label>
+            <label class="f" for="fSeller">Venditore
+              <select id="fSeller"><option value="">Tutti</option><option value="dealer">Concessionari</option><option value="private">Privati</option></select>
+            </label>
           </div>
           <div class="group"><span>Alimentazione</span><div class="chips" id="cFuel"></div></div>
           <div class="group"><span>Cambio</span><div class="chips" id="cGear"></div></div>
@@ -268,6 +271,7 @@ body.has-selection .wrap{padding-bottom:190px}
     <div>AM Autoccasione espone prezzi validi solo con finanziamento: il filtro usa quel prezzo, l'etichetta gialla indica quanto costa senza. Per le sue auto alimentazione e cambio sono dedotti dal titolo dell'annuncio.</div>
     <div class="app-footer"><span class="ver-app" id="appver"></span><button class="link" id="updFooter" type="button" title="Scarica l'ultima versione della pagina">Aggiorna app</button></div>
     <div>Le etichette Nuova e Scesa di prezzo confrontano la ricerca con quella precedente fatta da questo dispositivo.</div>
+    <div>AutoScout24 Lombardia: ricerca aggiuntiva fino a 10.000 €, dal 2020. La località del venditore viene verificata tramite CAP lombardo. Annunci e conteggi dipendono dai risultati restituiti dal portale; eventuali pagine mancanti sono segnalate.</div>
   </div>
 </div>
 
@@ -312,15 +316,15 @@ body.has-selection .wrap{padding-bottom:190px}
   </div>
 </dialog>
 
-<script src="./deals.js?v=12"></script>
+<script src="./deals.js?v=14"></script>
 <script>
 var FUNCTION_URL = "https://udhrplrxqxgiafwxtbqe.supabase.co/functions/v1/cerca-auto";
 // Chiave pubblica (anon) del progetto Supabase: serve solo a chiamare la funzione.
 var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHJwbHJ4cXhnaWFmd3h0YnFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4NzMxNDYsImV4cCI6MjExMDQ0OTE0Nn0.IGw8x9AdKhWRMfIcU3CG7dHjbBQACOn1qlqDA75cNmo";
 
-var APP_VERSION = "13 · 17 nov 2026";
+var APP_VERSION = "14 · 17 nov 2026";
 
-var DEFAULTS={price:10000,year:2020,km:0,brand:"",body:"",sort:"price",text:"",fuel:[],gear:"",src:[],res:false,disc:false,fresh:false,clean:false};
+var DEFAULTS={price:10000,year:2020,km:0,brand:"",body:"",seller:"",sort:"price",text:"",fuel:[],gear:"",src:[],res:false,disc:false,fresh:false,clean:false};
 
 function applyFilters(cars,s,ratings){
   var t=s.text.trim().toLowerCase();
@@ -329,11 +333,12 @@ function applyFilters(cars,s,ratings){
     if(c.year<s.year) return false;
     if(s.km && c.km>s.km) return false;
     if(s.brand && c.brand!==s.brand) return false;
+    if(s.seller && (c.sellerType||"dealer")!==s.seller) return false;
     if(s.body && c.body.toLowerCase()!==s.body) return false;
     if(s.fuel.length && s.fuel.indexOf(c.fuel)<0) return false;
     if(s.gear && c.gear!==s.gear) return false;
     if(s.src.length && s.src.indexOf(c.src)<0) return false;
-    if(s.res && c.res) return false;
+    if(s.res && (c.res||c.unavailable)) return false;
     if(s.disc && !c.old && !c.drop) return false;
     if(s.fresh && !c.isNew && !c.drop) return false;
     if(s.clean && (c.cash || c.note)) return false;
@@ -382,6 +387,9 @@ function formatListingsForAI(cars,updated){
       "Carrozzeria: "+(c.body||"Non indicata")
     ];
     if(Number(c.seats)>0) rows.push("Posti omologati: "+c.seats);
+    if(c.sellerType) rows.push("Tipo venditore: "+(c.sellerType==="private"?"Privato":c.sellerType==="dealer"?"Concessionario":"Non indicato"));
+    if(c.city) rows.push("Località venditore: "+c.city+(c.postcode?" · "+c.postcode:""));
+    if(c.sellerName) rows.push("Nome venditore: "+c.sellerName);
     if(c.cash){
       rows.push("Prezzo con finanziamento: "+money(c.price));
       rows.push("Prezzo senza finanziamento: "+money(c.cash));
@@ -392,7 +400,7 @@ function formatListingsForAI(cars,updated){
     }
     if(c.old>c.price) rows.push("Prezzo precedente esposto dal sito: "+money(c.old));
     if(c.drop) rows.push("Ribasso rilevato dall'ultima ricerca: "+money(c.drop));
-    rows.push("Disponibilità: "+(c.res?"segnalata come prenotata":"da confermare con il venditore"));
+    rows.push("Disponibilità: "+(c.res?"segnalata come prenotata":c.unavailable?"non disponibile al momento":"da confermare con il venditore"));
     if(c.note) rows.push("Avvertenze: "+c.note);
     rows.push("Venditore / fonte: "+(c.src||"Non indicato"));
     rows.push("Link: "+(c.url||"Non disponibile"));
@@ -445,6 +453,7 @@ if(typeof document!=="undefined"){(function(){
   }
   bind("fPrice","price",true);bind("fYear","year",true);bind("fKm","km",true);bind("fBrand","brand");bind("fBody","body");
   bind("fSort","sort");bind("fText","text");bind("fRes","res");bind("fDisc","disc");bind("fFresh","fresh");bind("fClean","clean");
+  bind("fSeller","seller");
   $("reset").addEventListener("click",function(){state=JSON.parse(JSON.stringify(DEFAULTS));render();});
   $("sortDeals").addEventListener("click",function(){state.sort="deal";$("bestDeals").open=false;render();});
   $("explainDeals").addEventListener("click",function(){$("dealDialog").showModal();});
@@ -453,6 +462,7 @@ if(typeof document!=="undefined"){(function(){
   function syncControls(){
     $("fPrice").value=state.price||"";$("fYear").value=state.year;$("fKm").value=state.km;$("fBrand").value=state.brand;$("fBody").value=state.body;
     $("fSort").value=state.sort;$("fText").value=state.text;$("fRes").checked=state.res;$("fDisc").checked=state.disc;$("fFresh").checked=state.fresh;$("fClean").checked=state.clean;
+    $("fSeller").value=state.seller;
   }
   function syncChips(){
     [["cFuel","fuel",true],["cGear","gear",false],["cSrc","src",true]].forEach(function(g){
@@ -473,7 +483,7 @@ if(typeof document!=="undefined"){(function(){
     var okN=META.sources.filter(function(s){return s.ok;}).length;
     var tot=META.sources.reduce(function(a,s){return a+s.got;},0);
     var bad=META.sources.filter(function(s){return !s.ok||s.got<s.expected;}).map(function(s){
-      return s.ok ? s.name+" "+s.got+" di "+s.expected : s.name+" non raggiungibile";
+      return s.coverage&&s.error ? s.name+": "+s.error : s.ok ? s.name+" "+s.got+" di "+s.expected : s.name+" non raggiungibile";
     });
     el.textContent="Ultima ricerca: "+when(META.updated)+" · "+tot+" auto da "+okN+" siti su "+META.sources.length+(bad.length?" · "+bad.join(" · "):"");
     if(META.sources.some(function(s){return !s.ok||s.got<s.expected;})) el.className="status err";
@@ -555,7 +565,7 @@ if(typeof document!=="undefined"){(function(){
     renderDeals(res);
     $("count").textContent=res.length;
     $("countLabel").textContent="auto su "+nf.format(CARS.length);
-    var advanced=[state.brand,state.body,state.fuel.length,state.gear,state.src.length,state.res,state.disc,state.fresh,state.clean].filter(Boolean).length;
+    var advanced=[state.brand,state.body,state.seller,state.fuel.length,state.gear,state.src.length,state.res,state.disc,state.fresh,state.clean].filter(Boolean).length;
     $("advancedCount").hidden=!advanced;
     $("advancedCount").textContent=advanced+" attiv"+(advanced===1?"o":"i");
     var nNew=res.filter(function(c){return c.isNew;}).length;
@@ -571,6 +581,7 @@ if(typeof document!=="undefined"){(function(){
         '<div><div class="name">'+esc(c.brand+" "+c.model)+'</div><div class="ver">'+esc(c.ver)+'</div></div>'+
         '<div class="price"><b>'+nf.format(c.price)+' €</b>'+(c.old?'<s>'+nf.format(c.old)+' €</s><em>−'+nf.format(disc)+' €</em>':'')+(c.cash?'<small>solo con finanziamento</small>':'')+'</div>'+
         '<div class="facts"><span>'+esc(c.reg)+'</span><span>'+nf.format(c.km)+' km</span><span>'+esc(c.fuelLabel)+'</span><span>'+esc(c.gear)+'</span>'+(c.cv?'<span>'+c.cv+' CV</span>':'')+(c.body?'<span>'+esc(c.body)+'</span>':'')+'</div>'+
+        (c.sellerName||c.city?'<div class="ver" style="grid-column:1/-1">'+esc([c.sellerName,c.city].filter(Boolean).join(" · "))+'</div>':'')+
         (deal?'<div class="deal-line"><b>Buon affare stimato</b> · circa '+deal.percent+'% sotto i confronti <span>('+deal.peers+' annunci, '+deal.sellers+' venditori'+(deal.cash?', sul prezzo senza finanziamento':'')+')</span></div>':'')+
         '<div class="foot"><div class="tags"><span class="tag src-'+(SITES.indexOf(c.src)%6)+'">'+esc(c.src)+'</span>'+
         (c.isNew?'<span class="tag new">Nuova</span>':'')+
@@ -578,6 +589,8 @@ if(typeof document!=="undefined"){(function(){
         (c.cash?'<span class="tag warn">Senza finanziamento '+nf.format(c.cash)+' €</span>':'')+
         (c.real?'<span class="tag ok">Prezzo senza vincoli dichiarato</span>':'')+
         (c.note?'<span class="tag warn">'+esc(c.note)+'</span>':'')+
+        (c.sellerType?'<span class="tag">'+(c.sellerType==="private"?'Privato':c.sellerType==="dealer"?'Concessionario':'Venditore non indicato')+'</span>':'')+
+        (c.unavailable?'<span class="tag warn">Non disponibile ora</span>':'')+
         (c.res?'<span class="tag warn">Prenotata</span>':'')+'</div>'+
         '<div class="car-actions"><label class="check select-car"><input class="pick" type="checkbox" data-key="'+esc(carKey(c))+'" aria-label="'+esc('Seleziona '+c.brand+' '+c.model+' · '+c.reg+' · '+nf.format(c.km)+' km · '+c.src)+'"'+(selected[carKey(c)]?' checked':'')+'>Seleziona</label>'+
         '<a class="open" href="'+esc(c.url)+'" target="_blank" rel="noopener">Apri annuncio</a></div></div></li>';
@@ -613,7 +626,8 @@ if(typeof document!=="undefined"){(function(){
         .then(function(data){
           var complete=data.sources.every(function(x){return x.ok;});
           if(!best||data.cars.length>best.cars.length) best=data;
-          if(complete||i===regions.length-1) return best;
+          var needsRegionRetry=data.sources.some(function(x){return x.name==="brumbrum"&&!x.ok;});
+          if(complete||!needsRegionRetry||i===regions.length-1) return best;
           return attempt(i+1,best);
         },function(e){
           if(i===regions.length-1){ if(best) return best; throw e; }

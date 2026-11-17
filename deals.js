@@ -4,6 +4,7 @@
   var RULES={minPeers:3,minSellers:2,maxPerSeller:3,maxYearGap:2,maxKmGap:40000,powerTolerance:.15,minSaving:500,minSavingRatio:.05,maxSavingRatio:.35};
   function norm(value){return String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();}
   function key(car){return car.src+"|"+car.id;}
+  function seller(car){return car.sellerId?'as24:'+car.sellerId:norm(car.sellerName||car.src);}
   function price(car){
     var advertised=Number(car.price),cash=Number(car.cash);
     // Un prezzo cash esplicito ma non valido non può diventare il prezzo promozionale.
@@ -15,14 +16,14 @@
   function eligible(car,year){
     var body=norm(car.body),version=norm(car.ver);
     return !!(car.id!==undefined&&car.id!==null&&String(car.id)!==""&&norm(car.src)&&norm(car.brand)&&norm(car.model)&&norm(car.fuel)&&norm(car.gear)&&
-      !car.res&&!car.note&&Number.isFinite(price(car))&&Number.isInteger(Number(car.year))&&car.year>=2000&&car.year<=year+1&&
+      !car.res&&!car.unavailable&&!car.note&&Number.isFinite(price(car))&&Number.isInteger(Number(car.year))&&car.year>=2000&&car.year<=year+1&&
       Number.isFinite(Number(car.km))&&car.km>0&&Number.isFinite(Number(car.cv))&&car.cv>0&&urlIdentity(car)&&
       !(Number(car.seats)>0&&Number(car.seats)<=2)&&!/furgon|\bvan\b|autocarro|commercial/.test(body+" "+version));
   }
   function family(car){
     var version=norm(car.ver),fuel=norm(car.fuel),hybrid="";
     if(fuel==="ibrida") hybrid=/plug in|phev/.test(norm(car.fuelLabel)+" "+version)?"plug-in":/full hybrid|\bhev\b/.test(norm(car.fuelLabel)+" "+version)?"full":"other";
-    return [norm(car.brand),norm(car.model),fuel,hybrid,norm(car.gear),/\b4x4\b|\b4wd\b|\bawd\b|\bquattro\b|\bxdrive\b|\b4matic\b/.test(version)?"4wd":"2wd",/cabrio|convertib/.test(norm(car.body))?"cabrio":"auto"].join("|");
+    return [norm(car.brand),norm(car.model),fuel,hybrid,norm(car.gear),car.sellerType==='private'?'private':'dealer',/\b4x4\b|\b4wd\b|\bawd\b|\bquattro\b|\bxdrive\b|\b4matic\b/.test(version)?"4wd":"2wd",/cabrio|convertib/.test(norm(car.body))?"cabrio":"auto"].join("|");
   }
   function calculate(cars,asOfYear){
     var year=asOfYear||new Date().getFullYear(),groups=Object.create(null),seen=Object.create(null),ratings=Object.create(null);
@@ -41,8 +42,8 @@
         }).sort(function(a,b){
           var distance=function(p){return (car.year-p.year)/RULES.maxYearGap+(p.km-car.km)/RULES.maxKmGap;};
           return distance(a)-distance(b)||key(a).localeCompare(key(b));
-        }).filter(function(peer){var seller=norm(peer.src);sellerCounts[seller]=(sellerCounts[seller]||0)+1;return sellerCounts[seller]<=RULES.maxPerSeller;});
-        var sellers=new Set(peers.map(function(p){return norm(p.src);})).size;
+        }).filter(function(peer){var id=seller(peer);sellerCounts[id]=(sellerCounts[id]||0)+1;return sellerCounts[id]<=RULES.maxPerSeller;});
+        var sellers=new Set(peers.map(seller)).size;
         if(peers.length<RULES.minPeers||sellers<RULES.minSellers) return;
         var reference=median(peers.map(price)),saving=reference-price(car),ratio=saving/reference;
         if(saving<RULES.minSaving||ratio<RULES.minSavingRatio||ratio>RULES.maxSavingRatio) return;
