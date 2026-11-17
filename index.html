@@ -93,6 +93,24 @@ li.car.res{opacity:.72}
 .tag.warn{background:var(--warn-bg);color:var(--warn)}
 a.open{font-size:13px;font-weight:600;color:var(--accent)}
 .empty{background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:20px;color:var(--muted);text-align:center}
+.car.selected{border-color:var(--accent);box-shadow:inset 3px 0 var(--accent)}
+.car-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
+.select-car{font-size:13px;cursor:pointer;min-height:36px}
+.selection-tools{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 12px}
+.selection-help,.selection-note{font-size:12px;color:var(--muted)}
+.selection-note:empty{display:none}
+.selection-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom,0px));width:calc(100% - 32px);max-width:828px;z-index:5;box-shadow:0 6px 28px #0003;gap:6px}
+.selection-bar[hidden]{display:none}
+.selection-bar .row{gap:8px 12px}
+.copy-status{font-size:13px;color:var(--good)}
+.copy-status:empty{display:none}
+body.has-selection .wrap{padding-bottom:190px}
+.copy-dialog{color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:12px;width:calc(100% - 32px);max-width:640px;padding:20px}
+.copy-dialog::backdrop{background:#0008}
+.copy-dialog h2{font-family:var(--display);font-size:20px;margin:0 0 8px}
+.copy-dialog p{font-size:14px;margin:0 0 12px}
+.copy-dialog textarea{width:100%;height:42vh;min-height:160px;font:inherit;font-size:14px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:12px;resize:vertical}
+.copy-dialog .actions{margin-top:12px;justify-content:flex-end}
 .note{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:6px;max-width:65ch}
 </style>
 </head>
@@ -158,7 +176,23 @@ a.open{font-size:13px;font-weight:600;color:var(--accent)}
   </section>
 
   <div class="summary"><div><b id="count">0</b> <span id="countLabel"></span></div><span id="bySrc"></span></div>
+  <div class="selection-tools">
+    <button class="link" id="selectVisible" type="button" disabled>Seleziona i risultati</button>
+    <span class="selection-help">La selezione resta anche cambiando i filtri.</span>
+  </div>
+  <div class="selection-note" id="selectionNotice" role="status" aria-live="polite"></div>
   <ul class="list" id="list"></ul>
+
+  <section class="selection-bar panel" id="selectionBar" aria-label="Annunci selezionati" hidden>
+    <div class="row">
+      <strong id="selectionCount" aria-live="polite"></strong>
+      <div class="actions">
+        <button class="btn ghost" id="clearSelected" type="button">Deseleziona tutte</button>
+        <button class="btn" id="copySelected" type="button">Copia per AI</button>
+      </div>
+    </div>
+    <div class="copy-status" id="copyStatus" role="status" aria-live="polite"></div>
+  </section>
 
   <div class="note">
     <div>Cerca ora legge in quel momento tutti gli annunci di brumbrum.it, di AM Autoccasione e, dalle loro pagine Autoscout24, dei concessionari elencati nel filtro Sito. Prezzo e disponibilità vanno sempre confermati sull'annuncio.</div>
@@ -170,12 +204,23 @@ a.open{font-size:13px;font-weight:600;color:var(--accent)}
   </div>
 </div>
 
+<dialog class="copy-dialog" id="copyDialog" aria-labelledby="copyTitle" aria-describedby="copyHint">
+  <h2 id="copyTitle">Copia gli annunci</h2>
+  <p id="copyHint">La copia automatica non è disponibile. Seleziona il testo e usa Copia dal menu del dispositivo, poi incollalo nella tua AI.</p>
+  <label class="f" for="copyText">Testo da copiare</label>
+  <textarea id="copyText" readonly spellcheck="false"></textarea>
+  <div class="actions">
+    <button class="btn ghost" id="closeCopy" type="button">Chiudi</button>
+    <button class="btn" id="selectCopyText" type="button">Seleziona testo</button>
+  </div>
+</dialog>
+
 <script>
 var FUNCTION_URL = "https://udhrplrxqxgiafwxtbqe.supabase.co/functions/v1/cerca-auto";
 // Chiave pubblica (anon) del progetto Supabase: serve solo a chiamare la funzione.
 var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHJwbHJ4cXhnaWFmd3h0YnFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4NzMxNDYsImV4cCI6MjExMDQ0OTE0Nn0.IGw8x9AdKhWRMfIcU3CG7dHjbBQACOn1qlqDA75cNmo";
 
-var APP_VERSION = "7 · 17 nov 2026";
+var APP_VERSION = "8 · 17 nov 2026";
 
 var DEFAULTS={price:10000,year:2020,km:0,brand:"",body:"",sort:"price",text:"",fuel:[],gear:"",src:[],res:false,disc:false,fresh:false,clean:false};
 
@@ -214,8 +259,50 @@ function markChanges(cars,prev){
 }
 function priceMap(cars){var m={};cars.forEach(function(c){m[c.src+"|"+c.id]=c.price;});return m;}
 
+function carKey(c){return c.src+"|"+c.id;}
+function formatListingsForAI(cars,updated){
+  if(!cars.length) return "";
+  var nf=new Intl.NumberFormat("it-IT");
+  var money=function(n){return Number(n)>0?nf.format(Number(n))+" €":"Non indicato";};
+  var header=[
+    "Confronta questi "+cars.length+" annunci di auto usate e aiutami a scegliere.",
+    "Valuta prezzo, anno, chilometri e caratteristiche. Indica punti di forza, criticità e domande da fare ai venditori.",
+    "Distingui i dati degli annunci dalle tue valutazioni. Non inventare informazioni mancanti e non trattare il prezzo con finanziamento come prezzo senza vincoli.",
+    "Passaggio di proprietà, IPT, garanzia e altri costi vanno verificati con il venditore. Prezzi e disponibilità possono cambiare."
+  ];
+  if(updated) header.push("Dati raccolti: "+new Date(updated).toLocaleString("it-IT")+".");
+  return header.join("\n")+"\n\n"+cars.map(function(c,i){
+    var rows=[
+      "ANNUNCIO "+(i+1)+" — "+[c.brand,c.model].filter(Boolean).join(" "),
+      "Versione / motorizzazione: "+(c.ver||"Non indicata"),
+      "Immatricolazione: "+(c.reg||(c.year?String(c.year):"Non indicata")),
+      "Chilometri dichiarati: "+(Number(c.km)>0?nf.format(Number(c.km))+" km":Number(c.km)===0?"0 km (dato da confermare)":"Non indicati"),
+      "Alimentazione: "+(c.fuelLabel||c.fuel||"Non indicata"),
+      "Cambio: "+(c.gear||"Non indicato"),
+      "Potenza: "+(Number(c.cv)>0?nf.format(Number(c.cv))+" CV":"Non indicata"),
+      "Carrozzeria: "+(c.body||"Non indicata"),
+      "Posti omologati: "+(Number(c.seats)>0?c.seats:"Non indicati")
+    ];
+    if(c.cash){
+      rows.push("Prezzo con finanziamento: "+money(c.price));
+      rows.push("Prezzo senza finanziamento: "+money(c.cash));
+      rows.push("Il costo totale del finanziamento non è indicato in questi dati.");
+    }else{
+      rows.push("Prezzo pubblicizzato: "+money(c.price));
+      rows.push("Condizioni di prezzo: "+(c.real?"assenza di vincoli dichiarata dal venditore, da confermare":"vincoli finanziari non verificati"));
+    }
+    if(c.old>c.price) rows.push("Prezzo precedente esposto dal sito: "+money(c.old));
+    if(c.drop) rows.push("Ribasso rilevato dall'ultima ricerca: "+money(c.drop));
+    rows.push("Disponibilità: "+(c.res?"segnalata come prenotata":"da confermare con il venditore"));
+    if(c.note) rows.push("Avvertenze: "+c.note);
+    rows.push("Venditore / fonte: "+(c.src||"Non indicato"));
+    rows.push("Link: "+(c.url||"Non disponibile"));
+    return rows.join("\n");
+  }).join("\n\n");
+}
+
 if(typeof document!=="undefined"){(function(){
-  var CARS=[], META=null;
+  var CARS=[], META=null, selected={}, copyBusy=false;
   var store={get:function(k){try{return JSON.parse(localStorage.getItem(k)||"null");}catch(e){return null;}},
              set:function(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
   var state=JSON.parse(JSON.stringify(DEFAULTS));
@@ -289,6 +376,62 @@ if(typeof document!=="undefined"){(function(){
     el.textContent="Ultima ricerca: "+when(META.updated)+" · "+tot+" auto da "+okN+" siti su "+META.sources.length+(bad.length?" · "+bad.join(" · "):"");
     if(META.sources.some(function(s){return !s.ok||s.got<s.expected;})) el.className="status err";
   }
+  function selectedCars(){return CARS.filter(function(c){return !!selected[carKey(c)];});}
+  function syncSelection(visible){
+    var chosen=selectedCars();
+    var hidden=chosen.length-visible.filter(function(c){return !!selected[carKey(c)];}).length;
+    $("selectionBar").hidden=!chosen.length;
+    document.body.classList.toggle("has-selection",chosen.length>0);
+    $("selectionCount").textContent=chosen.length+(chosen.length===1?" auto selezionata":" auto selezionate")+(hidden?" · "+hidden+" fuori dai filtri":"");
+    $("copySelected").disabled=copyBusy||!chosen.length;
+    $("selectVisible").disabled=!visible.length;
+    $("selectVisible").textContent="Seleziona i risultati"+(visible.length?" ("+visible.length+")":"");
+    $("list").querySelectorAll("input.pick").forEach(function(input){
+      input.checked=!!selected[input.getAttribute("data-key")];
+      input.closest("li").classList.toggle("selected",input.checked);
+    });
+  }
+  function selectionChanged(){
+    $("copyStatus").textContent="";
+    $("selectionNotice").textContent="";
+    syncSelection(applyFilters(CARS,state));
+  }
+  $("list").addEventListener("change",function(e){
+    var input=e.target;
+    if(!input.matches("input.pick")) return;
+    var key=input.getAttribute("data-key");
+    if(input.checked) selected[key]=true; else delete selected[key];
+    selectionChanged();
+  });
+  $("selectVisible").addEventListener("click",function(){
+    applyFilters(CARS,state).forEach(function(c){selected[carKey(c)]=true;});
+    selectionChanged();
+  });
+  $("clearSelected").addEventListener("click",function(){
+    selected={}; selectionChanged(); $("selectVisible").focus();
+  });
+  function selectCopyText(){
+    var input=$("copyText"); input.focus(); input.select(); input.setSelectionRange(0,input.value.length);
+  }
+  function manualCopy(text){
+    $("copyText").value=text;
+    $("copyDialog").showModal();
+    selectCopyText();
+  }
+  $("selectCopyText").addEventListener("click",selectCopyText);
+  $("closeCopy").addEventListener("click",function(){$("copyDialog").close();});
+  $("copySelected").addEventListener("click",function(){
+    var chosen=selectedCars(); if(!chosen.length||copyBusy) return;
+    var text=formatListingsForAI(chosen,META&&META.updated);
+    $("copyStatus").textContent="";
+    if(!navigator.clipboard||!navigator.clipboard.writeText){manualCopy(text);return;}
+    copyBusy=true; this.disabled=true;
+    navigator.clipboard.writeText(text).then(function(){
+      $("copyStatus").textContent=chosen.length+(chosen.length===1?" annuncio copiato":" annunci copiati")+". Incolla il testo nella tua AI.";
+    },function(){manualCopy(text);}).then(function(){
+      copyBusy=false; syncSelection(applyFilters(CARS,state));
+    });
+  });
   function render(fromInput){
     if(!fromInput) syncControls();
     syncChips();
@@ -298,11 +441,12 @@ if(typeof document!=="undefined"){(function(){
     $("countLabel").textContent=(res.length===1?"auto trovata":"auto trovate")+" su "+CARS.length+" lette";
     var nNew=res.filter(function(c){return c.isNew;}).length;
     $("bySrc").textContent=SITES.map(function(n){return [n,res.filter(function(c){return c.src===n;}).length];}).filter(function(x){return x[1];}).map(function(x){return x[0]+" "+x[1];}).join(" · ")+(nNew?" · "+nNew+" nuove":"");
+    syncSelection(res);
     if(!CARS.length){$("list").innerHTML='<li class="empty">Premi Cerca ora per leggere gli annunci dai siti.</li>';return;}
     if(!res.length){$("list").innerHTML='<li class="empty">Nessuna auto con questi filtri. Alza il prezzo massimo o abbassa l\'anno minimo.</li>';return;}
     $("list").innerHTML=res.map(function(c){
       var disc=c.old?c.old-c.price:0;
-      return '<li class="car'+(c.res?' res':'')+'">'+
+      return '<li class="car'+(c.res?' res':'')+(selected[carKey(c)]?' selected':'')+'">'+
         '<div><div class="name">'+esc(c.brand+" "+c.model)+'</div><div class="ver">'+esc(c.ver)+'</div></div>'+
         '<div class="price"><b>'+nf.format(c.price)+' €</b>'+(c.old?'<s>'+nf.format(c.old)+' €</s><em>−'+nf.format(disc)+' €</em>':'')+(c.cash?'<small>solo con finanziamento</small>':'')+'</div>'+
         '<div class="facts"><span>'+esc(c.reg)+'</span><span>'+nf.format(c.km)+' km</span><span>'+esc(c.fuelLabel)+'</span><span>'+esc(c.gear)+'</span>'+(c.cv?'<span>'+c.cv+' CV</span>':'')+(c.body?'<span>'+esc(c.body)+'</span>':'')+'</div>'+
@@ -313,12 +457,19 @@ if(typeof document!=="undefined"){(function(){
         (c.real?'<span class="tag ok">Prezzo senza vincoli dichiarato</span>':'')+
         (c.note?'<span class="tag warn">'+esc(c.note)+'</span>':'')+
         (c.res?'<span class="tag warn">Prenotata</span>':'')+'</div>'+
-        '<a class="open" href="'+esc(c.url)+'" target="_blank" rel="noopener">Apri annuncio</a></div></li>';
+        '<div class="car-actions"><label class="check select-car"><input class="pick" type="checkbox" data-key="'+esc(carKey(c))+'" aria-label="'+esc('Seleziona '+c.brand+' '+c.model+' · '+c.reg+' · '+nf.format(c.km)+' km · '+c.src)+'"'+(selected[carKey(c)]?' checked':'')+'>Seleziona</label>'+
+        '<a class="open" href="'+esc(c.url)+'" target="_blank" rel="noopener">Apri annuncio</a></div></div></li>';
     }).join("");
   }
   function load(data,prev){
     META={updated:data.updated,sources:data.sources};
     CARS=markChanges(data.cars,prev);
+    var kept={};
+    CARS.forEach(function(c){var key=carKey(c);if(selected[key]) kept[key]=true;});
+    var missing=Object.keys(selected).length-Object.keys(kept).length;
+    selected=kept;
+    $("copyStatus").textContent="";
+    $("selectionNotice").textContent=missing?missing+(missing===1?" auto selezionata non è stata ritrovata":" auto selezionate non sono state ritrovate")+" nell'ultima ricerca e non verranno copiate. Potrebbe dipendere anche da una fonte non raggiungibile.":"";
     // I siti arrivano dalla funzione: aggiungerne uno lì lo fa comparire qui da solo.
     SITES=data.sources.map(function(x){return x.name;});
     chipButtons($("cSrc"),SITES.map(function(n){return [n,n];}));
@@ -370,7 +521,7 @@ if(typeof document!=="undefined"){(function(){
   if(last&&last.cars){ load(last,null); renderStatus(); render(); }
   else { render(); renderStatus(); search(); }
 })();}
-if(typeof module!=="undefined") module.exports={applyFilters:applyFilters,markChanges:markChanges,priceMap:priceMap,DEFAULTS:DEFAULTS};
+if(typeof module!=="undefined") module.exports={applyFilters:applyFilters,markChanges:markChanges,priceMap:priceMap,DEFAULTS:DEFAULTS,formatListingsForAI:formatListingsForAI};
 </script>
 </body>
 </html>
