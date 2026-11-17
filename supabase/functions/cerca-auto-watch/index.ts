@@ -25,10 +25,12 @@ async function db(path: string, method = 'GET', body?: unknown, prefer = ''): Pr
   if (!res.ok) throw new Error('Database request failed: ' + res.status);
   const text = await res.text(); return text ? JSON.parse(text) : null;
 }
-async function all(path: string): Promise<any[]> {
+// Paged reads need a fixed order: without it a row can be skipped or repeated between pages,
+// and a skipped inventory row would make a known car look new.
+async function all(path: string, order: string): Promise<any[]> {
   const rows: any[] = [];
   for (let offset = 0; ; offset += 500) {
-    const page = await db(path + (path.includes('?') ? '&' : '?') + 'limit=500&offset=' + offset);
+    const page = await db(path + (path.includes('?') ? '&' : '?') + 'order=' + order + '&limit=500&offset=' + offset);
     rows.push(...page); if (page.length < 500) return rows;
   }
 }
@@ -89,7 +91,7 @@ async function scan() {
     const data = await res.json();
     if (!Array.isArray(data.cars) || !data.cars.length || !Array.isArray(data.sources)) throw new Error('No usable catalog');
     const [previous, initialized] = await Promise.all([
-      all('car_watch_inventory?select=car_key,first_seen,eligible'), all('car_watch_sources?select=name'),
+      all('car_watch_inventory?select=car_key,first_seen,eligible', 'car_key'), all('car_watch_sources?select=name', 'name'),
     ]);
     const known = new Map(previous.map((row) => [row.car_key, row]));
     const cars: WatchCar[] = data.cars.filter((car: WatchCar) => car && car.src && car.id !== undefined && car.id !== null && Number.isFinite(car.price) && car.price > 0);
@@ -97,11 +99,11 @@ async function scan() {
     for (let i = 0; i < rows.length; i += 200) await db('car_watch_inventory?on_conflict=car_key', 'POST', rows.slice(i, i + 200), 'resolution=merge-duplicates');
     const complete = data.sources.filter((source: any) => source.ok && source.got >= source.expected).map((source: any) => ({ name: source.name }));
     if (complete.length) await db('car_watch_sources?on_conflict=name', 'POST', complete, 'resolution=ignore-duplicates');
-    const subscriptions: Subscription[] = await all('car_watch_subscriptions?select=id,subscription,token_hash,enabled,created_at&enabled=eq.true');
+    const subscriptions: Subscription[] = await all('car_watch_subscriptions?select=id,subscription,token_hash,enabled,created_at&enabled=eq.true', 'id');
     let pushes = 0, failed = 0;
     const cutoff = new Date(Date.now() - 7 * 86400000).toISOString();
     for (const sub of subscriptions) {
-      const sent = new Set((await all('car_watch_sent?select=car_key&subscription_id=eq.' + sub.id)).map((row) => row.car_key));
+      const sent = new Set((await all('car_watch_sent?select=car_key&subscription_id=eq.' + sub.id, 'car_key')).map((row) => row.car_key));
       const fresh = rows.filter((row) => row.eligible && row.first_seen > sub.created_at && row.first_seen >= cutoff && !sent.has(row.car_key) && matchesWatch(row.car));
       if (!fresh.length) continue;
       fresh.sort((a, b) => a.car.price - b.car.price);

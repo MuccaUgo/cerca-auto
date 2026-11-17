@@ -45,6 +45,8 @@ h1{font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:-.01
 .top .actions{gap:6px}
 .top .btn{font-size:14px;padding:10px 12px;min-height:44px}
 .top .btn.ghost{font-size:13px}
+.top .btn.icon{font-size:19px;line-height:1;padding:8px;min-width:44px}
+@media (max-width:420px){.top h1{font-size:22px}.top .actions{gap:4px}.top .btn{padding:10px}.top .btn.icon{padding:8px}}
 .panel.filters{padding:12px;gap:10px}
 .filter-options{position:relative}
 .filter-options > .link{position:absolute;right:0;top:0;min-height:36px;font-size:12px}
@@ -147,6 +149,7 @@ body.has-selection .wrap{padding-bottom:190px}
     <div class="top">
       <h1>Cerca auto</h1>
       <div class="actions">
+        <button class="btn ghost icon" id="upd" type="button" aria-label="Aggiorna app" title="Aggiorna app: scarica l'ultima versione della pagina">↻</button>
         <button class="btn ghost" id="watchToggle" type="button" aria-haspopup="dialog">Avvisi</button>
         <button class="btn" id="go" type="button">Cerca ora</button>
       </div>
@@ -236,7 +239,7 @@ body.has-selection .wrap{padding-bottom:190px}
     <div>Prezzo senza vincoli dichiarato: l'annuncio scrive "prezzo reale" o "nessun vincolo di finanziamento". È una dichiarazione del venditore, non una verifica. Passaggio di proprietà e IPT sono di norma esclusi dal prezzo.</div>
     <div>Privacar è un'agenzia che vende auto di privati: sul venditore non grava la garanzia legale di conformità che vale per i concessionari; chiedi quale garanzia è inclusa e a che prezzo.</div>
     <div>AM Autoccasione espone prezzi validi solo con finanziamento: il filtro usa quel prezzo, l'etichetta gialla indica quanto costa senza. Per le sue auto alimentazione e cambio sono dedotti dal titolo dell'annuncio.</div>
-    <div class="app-footer"><span class="ver-app" id="appver"></span><button class="link" id="upd" type="button" title="Scarica l'ultima versione della pagina">Aggiorna app</button></div>
+    <div class="app-footer"><span class="ver-app" id="appver"></span><button class="link" id="updFooter" type="button" title="Scarica l'ultima versione della pagina">Aggiorna app</button></div>
     <div>Le etichette Nuova e Scesa di prezzo confrontano la ricerca con quella precedente fatta da questo dispositivo.</div>
   </div>
 </div>
@@ -273,7 +276,7 @@ var FUNCTION_URL = "https://udhrplrxqxgiafwxtbqe.supabase.co/functions/v1/cerca-
 // Chiave pubblica (anon) del progetto Supabase: serve solo a chiamare la funzione.
 var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHJwbHJ4cXhnaWFmd3h0YnFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4NzMxNDYsImV4cCI6MjExMDQ0OTE0Nn0.IGw8x9AdKhWRMfIcU3CG7dHjbBQACOn1qlqDA75cNmo";
 
-var APP_VERSION = "9 · 17 nov 2026";
+var APP_VERSION = "10 · 17 nov 2026";
 
 var DEFAULTS={price:10000,year:2020,km:0,brand:"",body:"",sort:"price",text:"",fuel:[],gear:"",src:[],res:false,disc:false,fresh:false,clean:false};
 
@@ -315,7 +318,7 @@ function priceMap(cars){var m={};cars.forEach(function(c){m[c.src+"|"+c.id]=c.pr
 function carKey(c){return c.src+"|"+c.id;}
 function formatListingsForAI(cars,updated){
   if(!cars.length) return "";
-  var nf=new Intl.NumberFormat("it-IT");
+  var nf=new Intl.NumberFormat("it-IT",{useGrouping:"always"});
   var money=function(n){return Number(n)>0?nf.format(Number(n))+" €":"Non indicato";};
   var header=[
     "Confronta questi "+cars.length+" annunci di auto usate e aiutami a scegliere.",
@@ -333,9 +336,9 @@ function formatListingsForAI(cars,updated){
       "Alimentazione: "+(c.fuelLabel||c.fuel||"Non indicata"),
       "Cambio: "+(c.gear||"Non indicato"),
       "Potenza: "+(Number(c.cv)>0?nf.format(Number(c.cv))+" CV":"Non indicata"),
-      "Carrozzeria: "+(c.body||"Non indicata"),
-      "Posti omologati: "+(Number(c.seats)>0?c.seats:"Non indicati")
+      "Carrozzeria: "+(c.body||"Non indicata")
     ];
+    if(Number(c.seats)>0) rows.push("Posti omologati: "+c.seats);
     if(c.cash){
       rows.push("Prezzo con finanziamento: "+money(c.price));
       rows.push("Prezzo senza finanziamento: "+money(c.cash));
@@ -362,7 +365,7 @@ if(typeof document!=="undefined"){(function(){
   var saved=store.get("cerca-auto-filtri");
   if(saved) for(var k in DEFAULTS) if(k in saved) state[k]=saved[k];
   var $=function(id){return document.getElementById(id);};
-  var nf=new Intl.NumberFormat("it-IT");
+  var nf=new Intl.NumberFormat("it-IT",{useGrouping:"always"});
   function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
 
   var years=[];for(var y=2010;y<=new Date().getFullYear();y++)years.push(y);
@@ -567,10 +570,12 @@ if(typeof document!=="undefined"){(function(){
   }
   $("go").addEventListener("click",search);
   // Ricarica la pagina saltando la copia salvata dal telefono. Filtri e ultima ricerca restano.
-  $("upd").addEventListener("click",function(){
-    this.disabled=true; this.textContent="Aggiorno…";
+  function updateApp(){
+    $("upd").disabled=true; $("updFooter").disabled=true; $("updFooter").textContent="Aggiorno…";
     location.replace(location.pathname+"?v="+Date.now());
-  });
+  }
+  $("upd").addEventListener("click",updateApp);
+  $("updFooter").addEventListener("click",updateApp);
   $("appver").textContent="Versione "+APP_VERSION;
 
   var last=store.get("cerca-auto-dati");

@@ -26,7 +26,7 @@ export function safePushEndpoint(endpoint: string): boolean {
   } catch { return false; }
 }
 export function notification(cars: WatchCar[], tag: string) {
-  const nf = new Intl.NumberFormat('it-IT');
+  const nf = new Intl.NumberFormat('it-IT', { useGrouping: 'always' } as Intl.NumberFormatOptions);
   const preview = cars.slice(0, 2).map((car) => ({
     label: (car.brand + ' ' + car.model).trim().slice(0, 70) + ' · ' + car.year + ' · ' + nf.format(car.price) + ' €' + (car.cash ? ' con finanziamento' : ''),
     url: car.url,

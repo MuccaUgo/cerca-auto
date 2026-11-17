@@ -27,7 +27,8 @@ self.addEventListener('notificationclick', function(event) {
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(list) {
     for (var i = 0; i < list.length; i++) {
       if (list[i].url.startsWith(self.registration.scope)) {
-        return list[i].navigate(target).then(function(client) { return client && client.focus(); });
+        return list[i].navigate(target).then(function(client) { return client && client.focus(); })
+          .catch(function() { return self.clients.openWindow(target); });
       }
     }
     return self.clients.openWindow(target);
