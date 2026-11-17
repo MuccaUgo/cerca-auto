@@ -69,7 +69,7 @@ export function notification(alerts: Alert[], tag: string, summary?: ScanSummary
   const limit = nf.format(WATCH.maxPrice) + ' €';
   const preview = alerts.slice(0, 2).map(({ car, from }) => ({
     label: (car.brand + ' ' + car.model).trim().slice(0, 70) + ' · ' + car.year + ' · ' + nf.format(car.price) + ' €' +
-      (car.cash ? ' con finanziamento' : '') + (from ? ' (era ' + nf.format(from) + ' €)' : ''),
+      (car.cash ? ' con finanziamento' : /finanziamento|prezzo subordinato/i.test(String(car.note ?? '')) ? ' · condizioni di prezzo da verificare' : '') + (from ? ' (era ' + nf.format(from) + ' €)' : ''),
     url: car.url,
   }));
   const title = !drops
