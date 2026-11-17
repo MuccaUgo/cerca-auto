@@ -7,6 +7,8 @@ type Car = {
   gear: string; res: boolean; fuel: string; fuelLabel: string; cv: number;
   body: string; url: string;
   cash?: number; // prezzo senza finanziamento, quando il prezzo esposto vale solo finanziando
+  real?: boolean; // l'annuncio dichiara prezzo reale / senza vincolo di finanziamento
+  note?: string; // avvertenza sull'annuncio
 };
 type SourceResult = { cars: Car[]; expected: number };
 
@@ -128,56 +130,65 @@ async function brumbrum(): Promise<SourceResult> {
   return { cars, expected: first.total };
 }
 
-// ---------- Achille Car (inventario su Autoscout24) ----------
-async function achilleCar(): Promise<SourceResult> {
-  const base = "https://www.autoscout24.it/concessionari/achille-car-srl";
-  const parse = (html: string) => {
-    const p = nextData(html).props.pageProps;
-    return { list: (p.listings ?? []) as any[], total: Number(p.numberOfResults) || 0 };
+// ---------- Concessionari con inventario su Autoscout24 ----------
+// Vale per qualsiasi concessionario: basta lo "slug" della sua pagina autoscout24.it/concessionari/<slug>.
+const REAL_PRICE = /PREZZO\s+REALE|NO\s+VINCOL|SENZA\s+VINCOL|NESSUN\s+VINCOL|NO\s+OBBLIGO|SENZA\s+OBBLIGO|NESSUN\s+OBBLIGO/i;
+const TEASER = /DIVERSI\s+COLORI|EXTRA-?SCONTO|PREZZO\s*\+\s*IVA/i;
+
+function autoscoutDealer(name: string, slug: string): () => Promise<SourceResult> {
+  return async () => {
+    const base = "https://www.autoscout24.it/concessionari/" + slug;
+    const parse = (html: string) => {
+      const p = nextData(html).props.pageProps;
+      return { list: (p.listings ?? []) as any[], total: Number(p.numberOfResults) || 0 };
+    };
+    const first = parse(await getHtml(base));
+    const pages = Math.max(1, Math.ceil(first.total / 20));
+    const rest = await inBatches(
+      Array.from({ length: pages - 1 }, (_, i) => i + 2),
+      4,
+      async (p) => {
+        try {
+          return parse(await getHtml(base + "/veicoli?page=" + p)).list;
+        } catch (_e) {
+          return [];
+        }
+      },
+    );
+    const seen = new Set<string>();
+    const cars: Car[] = [];
+    for (const l of [first.list, ...rest].flat()) {
+      if (!l || !l.id || seen.has(l.id)) continue;
+      seen.add(l.id);
+      const v = l.vehicle ?? {};
+      const reg = String(v.firstRegistrationDate?.formatted ?? "");
+      const rawDate = String(v.firstRegistrationDate?.raw ?? "");
+      const label = String(v.fuelCategory?.formatted ?? "");
+      const rawTitle = String(v.modelVersionInput ?? "") + " " + String(v.subtitle ?? "");
+      cars.push({
+        src: name,
+        id: l.id,
+        brand: String(v.make ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
+        model: String(v.model ?? ""),
+        ver: String(v.modelVersionInput ?? "").replace(/\*[^*]*\*/g, " ").replace(/\*/g, " ").replace(/\s+/g, " ").trim(),
+        year: Number(rawDate.slice(0, 4)) || Number(reg.split("/")[1]) || 0,
+        reg,
+        km: Number(v.mileageInKm?.raw) || 0,
+        price: Number(l.prices?.public?.priceRaw) || 0,
+        old: 0,
+        gear: String(v.transmissionType?.formatted ?? "").toLowerCase().startsWith("man") ? "Manuale" : "Automatico",
+        res: false,
+        fuel: fuelCategory(label),
+        fuelLabel: label.replace("Elettrica/", "Ibrida ").trim(),
+        cv: Number(v.powerInHp?.raw) || 0,
+        body: String(v.bodyType?.formatted ?? ""),
+        url: "https://www.autoscout24.it" + l.url,
+        real: REAL_PRICE.test(rawTitle),
+        note: TEASER.test(rawTitle) ? "Annuncio generico: prezzo e km da verificare" : "",
+      });
+    }
+    return { cars, expected: first.total };
   };
-  const first = parse(await getHtml(base));
-  const pages = Math.max(1, Math.ceil(first.total / 20));
-  const rest = await inBatches(
-    Array.from({ length: pages - 1 }, (_, i) => i + 2),
-    4,
-    async (p) => {
-      try {
-        return parse(await getHtml(base + "/veicoli?page=" + p)).list;
-      } catch (_e) {
-        return [];
-      }
-    },
-  );
-  const seen = new Set<string>();
-  const cars: Car[] = [];
-  for (const l of [first.list, ...rest].flat()) {
-    if (!l || !l.id || seen.has(l.id)) continue;
-    seen.add(l.id);
-    const v = l.vehicle ?? {};
-    const reg = String(v.firstRegistrationDate?.formatted ?? "");
-    const rawDate = String(v.firstRegistrationDate?.raw ?? "");
-    const label = String(v.fuelCategory?.formatted ?? "");
-    cars.push({
-      src: "Achille Car",
-      id: l.id,
-      brand: String(v.make ?? "").normalize("NFD").replace(/[̀-ͯ]/g, ""),
-      model: String(v.model ?? ""),
-      ver: String(v.modelVersionInput ?? "").replace(/\*[^*]*\*/g, "").replace(/\s+/g, " ").trim(),
-      year: Number(rawDate.slice(0, 4)) || Number(reg.split("/")[1]) || 0,
-      reg,
-      km: Number(v.mileageInKm?.raw) || 0,
-      price: Number(l.prices?.public?.priceRaw) || 0,
-      old: 0,
-      gear: String(v.transmissionType?.formatted ?? "").toLowerCase().startsWith("man") ? "Manuale" : "Automatico",
-      res: false,
-      fuel: fuelCategory(label),
-      fuelLabel: label.replace("Elettrica/", "Ibrida ").trim(),
-      cv: Number(v.powerInHp?.raw) || 0,
-      body: String(v.bodyType?.formatted ?? ""),
-      url: "https://www.autoscout24.it" + l.url,
-    });
-  }
-  return { cars, expected: first.total };
 }
 
 // ---------- AM Autoccasione (Milano, sito proprio) ----------
@@ -235,8 +246,11 @@ async function amAutoccasione(): Promise<SourceResult> {
 
 const SOURCES: { name: string; site: string; run: () => Promise<SourceResult> }[] = [
   { name: "brumbrum", site: "brumbrum.it", run: brumbrum },
-  { name: "Achille Car", site: "achillecar.it (Autoscout24)", run: achilleCar },
+  { name: "Achille Car", site: "achillecar.it (Autoscout24)", run: autoscoutDealer("Achille Car", "achille-car-srl") },
   { name: "AM Autoccasione", site: "amautoccasione.it", run: amAutoccasione },
+  { name: "Lanzocar", site: "Cologno Monzese (Autoscout24)", run: autoscoutDealer("Lanzocar", "lanzocar-srl") },
+  { name: "Little Cars 3", site: "Sesto San Giovanni (Autoscout24)", run: autoscoutDealer("Little Cars 3", "little-cars-3-di-500cars-snc") },
+  { name: "Broker Mobility", site: "Milano (Autoscout24)", run: autoscoutDealer("Broker Mobility", "brokermobility-by-rent-76-srl") },
 ];
 
 Deno.serve(async (req: Request) => {

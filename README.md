@@ -11,9 +11,14 @@ Pagina unica che legge in tempo reale gli annunci di auto usate da più siti e l
 | --- | --- |
 | brumbrum.it | catalogo `/auto/usata`, tutte le pagine |
 | achillecar.it | inventario del concessionario su Autoscout24 |
+| Lanzocar (Cologno Monzese) | inventario su Autoscout24 |
+| Little Cars 3 (Sesto San Giovanni) | inventario su Autoscout24 |
+| Broker Mobility (Milano) | inventario su Autoscout24 |
 | amautoccasione.it | pagina `/prodotti` del sito (prezzi validi solo con finanziamento: il prezzo senza è nel campo `cash`) |
 
 ## Aggiungere un sito
+
+Se il concessionario pubblica su Autoscout24 basta una riga in `SOURCES`: `autoscoutDealer("Nome", "slug-della-pagina")`.
 
 In `index.ts` scrivi una funzione che restituisce `{ cars, expected }` nel formato `Car` e aggiungila a `SOURCES`. Poi ripubblica la funzione su Supabase (progetto `cerca-auto`). La pagina mostra da sola il nuovo sito tra i filtri.
 
