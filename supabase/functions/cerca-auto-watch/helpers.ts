@@ -35,7 +35,7 @@ export function observeCars(cars: WatchCar[], previous: PreviousRow[], initializ
 }
 export function matchesWatch(car: WatchCar): boolean {
   return Number.isFinite(car.price) && car.price > 0 && car.price <= WATCH.maxPrice &&
-    Number.isInteger(car.year) && car.year >= WATCH.minYear && !car.res;
+    Number.isInteger(car.year) && car.year >= WATCH.minYear && !car.res && !car.unavailable;
 }
 export function safePushEndpoint(endpoint: string): boolean {
   try {
