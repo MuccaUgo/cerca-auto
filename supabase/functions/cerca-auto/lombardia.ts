@@ -8,6 +8,16 @@ export type RegionalCar = {
   fuel: string; fuelLabel: string; cv: number; body: string; url: string; real: boolean; note: string;
   portal: string; sellerId: string; sellerName: string; sellerType: string; city: string; postcode: string;
 };
+// Segnalazione dell'utente del 17/11/2026, non verifica delle condizioni contrattuali.
+// L'ID identifica il salone AutoScout24: non basta una somiglianza del nome.
+export function applyPriceWarnings<T extends { sellerId?: string; note?: string; real?: boolean; [key: string]: any }>(car: T): T {
+  if (String(car.sellerId) === '28098624') {
+    const warning = 'Finanziamento segnalato dall’utente: prezzo senza finanziamento da verificare';
+    if (!car.note?.includes(warning)) car.note = [car.note, warning].filter(Boolean).join(' · ');
+    car.real = false;
+  }
+  return car;
+}
 export function lombardiaUrl(page = 1): string {
   const q = new URLSearchParams({ atype: 'C', ustate: 'U', cy: 'I', zipr: String(LOMBARDIA.radiusKm), zip: 'Lombardia', lat: '45.66667', lon: '9.5', priceto: String(LOMBARDIA.maxPrice), fregfrom: String(LOMBARDIA.minYear), sort: 'age', desc: '1', size: String(LOMBARDIA.pageSize), page: String(page) });
   return 'https://www.autoscout24.it/lst?' + q;
@@ -39,7 +49,7 @@ export function listingCar(l: Listing, knownDealers: Record<string, string> = {}
   const raw = ver + ' ' + String(v.subtitle ?? '');
   const notes = [l.price?.isConditionalPrice ? 'Prezzo subordinato a condizioni: verificare finanziamento o permuta' : '', /diversi\s+colori|diverse\s+versioni|immagini\s+(?:indicative|dimostrative)|prezzo\s*\+\s*iva/i.test(raw) ? 'Annuncio generico: prezzo e km da verificare' : ''].filter(Boolean);
   const gear = String(v.transmission ?? detail('gearbox'));
-  return {
+  return applyPriceWarnings({
     src: knownDealers[slug] || LOMBARDIA.name, id: String(l.id),
     brand: String(v.make ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, ''), model: String(v.model ?? ''), ver, year, reg: reg || String(year),
     km: number(l.tracking?.mileage ?? v.mileageInKm ?? detail('mileage_odometer')), price, old: 0,
@@ -49,7 +59,7 @@ export function listingCar(l: Listing, knownDealers: Record<string, string> = {}
     real: !l.price?.isConditionalPrice && /prezzo\s*(?:reale|vero)|prezzovero|senza\s+vincoli|nessun\s+vincolo|no\s+vincoli/i.test(raw), note: notes.join(' · '),
     portal: 'autoscout24', sellerId: String(seller.id ?? ''), sellerName: sellerType === 'private' ? 'Privato' : String(seller.companyName ?? 'Venditore AutoScout24'),
     sellerType, city: String(l.location.city ?? ''), postcode: String(l.location.zip),
-  };
+  });
 }
 export function parseRegionalPage(html: string) {
   const marker = html.indexOf('__NEXT_DATA__'), start = html.indexOf('>', marker) + 1, end = html.indexOf('</script>', start);
@@ -93,7 +103,8 @@ export function mergeListings<T extends { src: string; id: string; url: string; 
     if (!old) { out.set(identity, car); continue; }
     for (const field of ['sellerId', 'sellerName', 'sellerType', 'city', 'postcode', 'portal']) if (!old[field] && car[field]) Object.assign(old, { [field]: car[field] });
     if (car.note && !old.note?.includes(car.note)) old.note = [old.note, car.note].filter(Boolean).join(' · ');
+    if (car.note) old.real = false;
     if (car.unavailable) old.unavailable = true;
   }
-  return [...out.values()];
+  return [...out.values()].map(applyPriceWarnings);
 }

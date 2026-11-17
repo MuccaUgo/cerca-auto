@@ -62,7 +62,7 @@ export function scoreDeals(cars: DealCar[], now: number) {
     const age = Math.max(0, thisYear - (year + (month - 1) / 12)), km = Number(car.km), note = String(car.note ?? '');
     const usable = Number.isFinite(price) && price >= 500 && Number.isInteger(year) && age <= 20 &&
       Number.isFinite(km) && km >= 0 && !(km === 0 && age > 1.5) &&               // km mancanti
-      !/da verificare/i.test(note) && !SUSPECT.test(String(car.ver ?? '')) &&     // annunci generici o auto da sistemare
+      !note && !SUSPECT.test(String(car.ver ?? '')) &&     // annunci generici o auto da sistemare
       norm(car.brand) !== '' && norm(car.model) !== '';
     if (!usable) continue;
     const fuel = String(car.fuel ?? '');
