@@ -27,7 +27,7 @@
       ? 'Su iPhone: apri questo sito in Safari, usa Condividi → Aggiungi alla schermata Home, poi riaprilo dalla nuova icona e attiva le notifiche.'
       : !supported ? 'Questo browser non supporta le notifiche web. Apri la webapp in un browser compatibile.'
       : Notification.permission === 'denied' ? 'Le notifiche sono bloccate. Riabilitale nelle impostazioni del dispositivo o del browser, poi riapri la webapp.'
-      : active ? 'Notifiche attive su questo dispositivo. Riceverai un avviso solo per nuovi annunci o ribassi sotto la soglia.'
+      : active ? 'Notifiche attive su questo dispositivo. Riceverai l’esito di ogni controllo, anche quando non ci sono novità.'
       : 'Tocca Attiva notifiche e consenti l’invio. Non è necessario lasciare aperta la pagina.';
     $('watchEnable').hidden = active;
     $('watchEnable').disabled = busy || install || !supported || !registration || !config || Notification.permission === 'denied';
@@ -45,6 +45,7 @@
         if (!data) return;
         var root = $('watchRecent'); root.replaceChildren();
         var title = document.createElement('p'); title.textContent = 'Ultimo avviso: ' + (data.title || 'Cerca auto'); root.appendChild(title);
+        if (data.body) { var message = document.createElement('p'); message.textContent = data.body; root.appendChild(message); }
         (data.cars || []).forEach(function(car) {
           var url; try { url = new URL(car.url); } catch (_e) { return; }
           if (url.protocol !== 'https:') return;

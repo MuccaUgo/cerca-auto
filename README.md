@@ -61,6 +61,14 @@ nuovi annunci disponibili fino a **10.000 €**, immatricolati dal **2020**, e l
 auto già in elenco che scendono sotto i 10.000 € (con il prezzo precedente).
 Ogni auto viene segnalata una sola volta per dispositivo. La soglia e l'anno sono
 in `WATCH`, in `supabase/functions/cerca-auto-watch/helpers.ts`.
+Ogni controllo invia comunque una notifica ai dispositivi attivi: se non ci sono
+nuovi eventi, conferma **nessuna novità** con l'ora italiana e il numero di
+annunci e siti controllati. Le auto già segnalate non vengono riproposte.
+Se mancano fonti, la notifica indica **controllo parziale**; un errore della
+ricerca produce, se database e servizio push sono raggiungibili, un avviso
+**controllo non riuscito**, senza dichiarare falsamente l'assenza di novità.
+Il primo controllo e una fonte appena aggiunta preparano lo storico senza
+presentare lo stock esistente come nuovo, ma inviano comunque l'esito del controllo.
 I prezzi pubblicizzati con finanziamento sono indicati come tali. Il primo
 controllo crea lo storico senza notificare lo stock già esistente; una fonte
 che sparisce temporaneamente non cancella lo storico.
