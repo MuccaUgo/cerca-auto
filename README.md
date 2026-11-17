@@ -153,3 +153,21 @@ Per un sito diverso serve una funzione in `index.ts` che restituisce `{ cars, ex
 - La funzione tiene in memoria il risultato per 3 minuti, per non interrogare i siti a ogni tocco.
 - Se un sito cambia struttura, la funzione lo segnala nel campo `sources[].error` e la pagina lo mostra nella riga di stato.
 - brumbrum rifiuta (403) le richieste dalla regione Supabase di Zurigo: la pagina forza `eu-central-1` e in caso di errore riprova da `eu-west-3` e `eu-west-1`.
+
+## Segnalazioni sui vincoli di prezzo (17 novembre 2026)
+
+Loconte Automobili (ID AutoScout24 `28098624`) è contrassegnato in
+`applyPriceWarnings` di `lombardia.ts` su segnalazione dell'utente: finanziamento,
+prezzo senza finanziamento da verificare. Non è una verifica contrattuale né
+una deduzione dal simulatore di prestito pubblicitario presente sul portale.
+La regola usa l'ID del venditore, non un nome simile; si applica anche dopo la
+fusione dei doppioni e prevale sul badge “prezzo reale”. Non inventa un prezzo cash.
+
+Le auto restano consultabili e selezionabili: avvertenza nella scheda e nella
+copia per AI, filtro di esclusione degli annunci con avvertenze, esclusione sia
+dai candidati ai migliori affari sia dal campione di confronto (anche nel
+calcolo del server). Le notifiche relative a queste auto indicano condizioni
+di prezzo da verificare. Gli orari e le notifiche senza novità restano attivi.
+Altre segnalazioni richiedono l'identificazione del venditore e la provenienza
+dell'informazione; non si attribuisce un vincolo di finanziamento per il solo
+fatto che esista un calcolatore di rate.

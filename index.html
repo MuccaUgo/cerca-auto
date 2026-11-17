@@ -268,6 +268,7 @@ body.has-selection .wrap{padding-bottom:190px}
     <div>Cerca ora legge in quel momento tutti gli annunci di brumbrum.it, di AM Autoccasione e, dalle loro pagine Autoscout24, dei concessionari elencati nel filtro Sito. Prezzo e disponibilità vanno sempre confermati sull'annuncio.</div>
     <div>Prezzo senza vincoli dichiarato: l'annuncio scrive "prezzo reale" o "nessun vincolo di finanziamento". È una dichiarazione del venditore, non una verifica. Passaggio di proprietà e IPT sono di norma esclusi dal prezzo.</div>
     <div>Privacar è un'agenzia che vende auto di privati: sul venditore non grava la garanzia legale di conformità che vale per i concessionari; chiedi quale garanzia è inclusa e a che prezzo.</div>
+    <div>Loconte: finanziamento segnalato dall’utente; prezzo senza finanziamento da verificare. Gli annunci restano consultabili, con avvertenza, ma non partecipano ai migliori affari.</div>
     <div>AM Autoccasione espone prezzi validi solo con finanziamento: il filtro usa quel prezzo, l'etichetta gialla indica quanto costa senza. Per le sue auto alimentazione e cambio sono dedotti dal titolo dell'annuncio.</div>
     <div class="app-footer"><span class="ver-app" id="appver"></span><button class="link" id="updFooter" type="button" title="Scarica l'ultima versione della pagina">Aggiorna app</button></div>
     <div>Le etichette Nuova e Scesa di prezzo confrontano la ricerca con quella precedente fatta da questo dispositivo.</div>
@@ -294,7 +295,7 @@ body.has-selection .wrap{padding-bottom:190px}
     <li>I confronti non sono più recenti e non hanno meno chilometri: al massimo 2 anni e 40.000 km di scarto.</li>
     <li>Servono almeno 3 annunci di 2 venditori. Considero al massimo i 3 più vicini per ciascun venditore ed elimino i link duplicati.</li>
     <li>Segnalo un buon affare da almeno il 5% e 500 € sotto la mediana dei confronti. Scarti oltre il 35% sono troppo anomali per questa classifica.</li>
-    <li>Uso il prezzo senza finanziamento, se disponibile. I vincoli non verificati riducono la priorità. In questa modalità anche il limite di prezzo usa il prezzo senza finanziamento noto.</li>
+    <li>Uso il prezzo senza finanziamento, se disponibile. Gli annunci con avvertenze sui prezzi sono esclusi sia dalla classifica sia dai confronti. Gli altri vincoli non verificati riducono la priorità. In questa modalità anche il limite di prezzo usa il prezzo senza finanziamento noto.</li>
     <li>Escludo prenotate, annunci con avvertenze, veicoli commerciali e dati essenziali mancanti o non validi.</li>
   </ul>
   <p class="watch-hint">È una stima sul campione raccolto. Allestimento, generazione, manutenzione, condizioni e costi aggiuntivi possono cambiare la convenienza reale. Se i dati non bastano, non assegno etichette.</p>
@@ -316,13 +317,13 @@ body.has-selection .wrap{padding-bottom:190px}
   </div>
 </dialog>
 
-<script src="./deals.js?v=14"></script>
+<script src="./deals.js?v=15"></script>
 <script>
 var FUNCTION_URL = "https://udhrplrxqxgiafwxtbqe.supabase.co/functions/v1/cerca-auto";
 // Chiave pubblica (anon) del progetto Supabase: serve solo a chiamare la funzione.
 var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHJwbHJ4cXhnaWFmd3h0YnFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4NzMxNDYsImV4cCI6MjExMDQ0OTE0Nn0.IGw8x9AdKhWRMfIcU3CG7dHjbBQACOn1qlqDA75cNmo";
 
-var APP_VERSION = "14 · 17 nov 2026";
+var APP_VERSION = "15 · 17 nov 2026";
 
 var DEFAULTS={price:10000,year:2020,km:0,brand:"",body:"",seller:"",sort:"price",text:"",fuel:[],gear:"",src:[],res:false,disc:false,fresh:false,clean:false};
 
@@ -579,7 +580,7 @@ if(typeof document!=="undefined"){(function(){
       if(deal&&state.price&&deal.price>state.price) deal=null;
       return '<li class="car'+(c.res?' res':'')+(selected[carKey(c)]?' selected':'')+'">'+
         '<div><div class="name">'+esc(c.brand+" "+c.model)+'</div><div class="ver">'+esc(c.ver)+'</div></div>'+
-        '<div class="price"><b>'+nf.format(c.price)+' €</b>'+(c.old?'<s>'+nf.format(c.old)+' €</s><em>−'+nf.format(disc)+' €</em>':'')+(c.cash?'<small>solo con finanziamento</small>':'')+'</div>'+
+        '<div class="price"><b>'+nf.format(c.price)+' €</b>'+(c.old?'<s>'+nf.format(c.old)+' €</s><em>−'+nf.format(disc)+' €</em>':'')+(c.cash?'<small>solo con finanziamento</small>':/finanziamento segnalato/i.test(c.note||'')?'<small>Prezzo senza finanziamento da verificare</small>':'')+'</div>'+
         '<div class="facts"><span>'+esc(c.reg)+'</span><span>'+nf.format(c.km)+' km</span><span>'+esc(c.fuelLabel)+'</span><span>'+esc(c.gear)+'</span>'+(c.cv?'<span>'+c.cv+' CV</span>':'')+(c.body?'<span>'+esc(c.body)+'</span>':'')+'</div>'+
         (c.sellerName||c.city?'<div class="ver" style="grid-column:1/-1">'+esc([c.sellerName,c.city].filter(Boolean).join(" · "))+'</div>':'')+
         (deal?'<div class="deal-line"><b>Buon affare stimato</b> · circa '+deal.percent+'% sotto i confronti <span>('+deal.peers+' annunci, '+deal.sellers+' venditori'+(deal.cash?', sul prezzo senza finanziamento':'')+')</span></div>':'')+
