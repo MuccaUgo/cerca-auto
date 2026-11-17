@@ -19,9 +19,9 @@ const CORS = {
 const CACHE_MS = 3 * 60 * 1000;
 let cache: { at: number; body: string } | null = null;
 
-async function getHtml(url: string): Promise<string> {
+async function getHtmlOnce(url: string): Promise<string> {
   const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), 20000);
+  const t = setTimeout(() => ctl.abort(), 15000);
   try {
     const r = await fetch(url, {
       signal: ctl.signal,
@@ -32,6 +32,21 @@ async function getHtml(url: string): Promise<string> {
   } finally {
     clearTimeout(t);
   }
+}
+
+// Fino a 3 tentativi: i siti ogni tanto rifiutano o lasciano cadere una singola richiesta.
+async function getHtml(url: string): Promise<string> {
+  let last: unknown;
+  for (let i = 0; i < 3; i++) {
+    try {
+      return await getHtmlOnce(url);
+    } catch (e) {
+      last = e;
+      console.error("tentativo " + (i + 1) + " fallito: " + url + " — " + String((e as Error).message ?? e));
+      await new Promise((r) => setTimeout(r, 700 * (i + 1)));
+    }
+  }
+  throw last;
 }
 
 function nextData(html: string): any {
@@ -72,8 +87,14 @@ async function brumbrum(): Promise<SourceResult> {
   const pages = Math.max(1, Math.ceil(first.total / 24));
   const rest = await inBatches(
     Array.from({ length: pages - 1 }, (_, i) => i + 2),
-    6,
-    async (p) => parse(await getHtml(base + "?page=" + p)).list,
+    4,
+    async (p) => {
+      try {
+        return parse(await getHtml(base + "?page=" + p)).list;
+      } catch (_e) {
+        return []; // una pagina persa non deve far perdere tutto il sito
+      }
+    },
   );
   const seen = new Set<string>();
   const cars: Car[] = [];
@@ -174,6 +195,7 @@ Deno.serve(async (req: Request) => {
         const r = await s.run();
         return { name: s.name, site: s.site, ok: true, expected: r.expected, got: r.cars.length, error: "", cars: r.cars };
       } catch (e) {
+        console.error(s.name + " non letto: " + String((e as Error).message ?? e));
         return { name: s.name, site: s.site, ok: false, expected: 0, got: 0, error: String((e as Error).message ?? e), cars: [] as Car[] };
       }
     }),
@@ -183,6 +205,7 @@ Deno.serve(async (req: Request) => {
     sources: results.map(({ cars: _c, ...meta }) => meta),
     cars: results.flatMap((r) => r.cars).filter((c) => c.price > 0),
   });
-  if (results.some((r) => r.ok)) cache = { at: Date.now(), body };
+  // In memoria solo i risultati completi: un errore momentaneo non deve restare per minuti.
+  if (results.every((r) => r.ok && r.got >= r.expected)) cache = { at: Date.now(), body };
   return new Response(body, { headers });
 });
