@@ -8,6 +8,8 @@ create table public.car_watch_inventory (
   first_seen timestamptz not null,
   last_seen timestamptz not null,
   eligible boolean not null default false,
+  entered_at timestamptz,   -- when a known car dropped below the price limit
+  entered_from numeric,     -- its price before that drop
   car jsonb not null
 );
 create table public.car_watch_sources (
@@ -39,6 +41,7 @@ create table public.car_watch_runs (
   sources jsonb not null default '[]',
   cars_read integer not null default 0,
   new_cars integer not null default 0,
+  price_drops integer not null default 0,
   pushes_sent integer not null default 0,
   error text
 );

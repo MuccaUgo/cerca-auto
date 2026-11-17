@@ -27,7 +27,7 @@
       ? 'Su iPhone: apri questo sito in Safari, usa Condividi → Aggiungi alla schermata Home, poi riaprilo dalla nuova icona e attiva le notifiche.'
       : !supported ? 'Questo browser non supporta le notifiche web. Apri la webapp in un browser compatibile.'
       : Notification.permission === 'denied' ? 'Le notifiche sono bloccate. Riabilitale nelle impostazioni del dispositivo o del browser, poi riapri la webapp.'
-      : active ? 'Notifiche attive su questo dispositivo. Riceverai un avviso solo quando ci sono nuovi annunci.'
+      : active ? 'Notifiche attive su questo dispositivo. Riceverai un avviso solo per nuovi annunci o ribassi sotto la soglia.'
       : 'Tocca Attiva notifiche e consenti l’invio. Non è necessario lasciare aperta la pagina.';
     $('watchEnable').hidden = active;
     $('watchEnable').disabled = busy || install || !supported || !registration || !config || Notification.permission === 'denied';

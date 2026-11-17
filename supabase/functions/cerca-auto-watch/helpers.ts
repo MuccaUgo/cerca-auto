@@ -1,21 +1,41 @@
+// Alert criteria, in one place: the scan, the notification text and the config endpoint all read them.
+export const WATCH = { maxPrice: 10000, minYear: 2020 };
+
 export type WatchCar = {
   src: string; id: string | number; brand: string; model: string; year: number;
   price: number; cash?: number; res?: boolean; url: string;
   [key: string]: unknown;
 };
 export function carKey(car: WatchCar): string { return car.src + '|' + car.id; }
-export type InventoryRow = { car_key: string; src: string; first_seen: string; last_seen: string; eligible: boolean; car: WatchCar };
-export function observeCars(cars: WatchCar[], previous: { car_key: string; first_seen: string; eligible: boolean }[], initialized: string[], now: string): InventoryRow[] {
+// entered_at / entered_from: when a car already in the inventory dropped below the price limit, and from which price.
+export type InventoryRow = {
+  car_key: string; src: string; first_seen: string; last_seen: string; eligible: boolean;
+  entered_at: string | null; entered_from: number | null; car: WatchCar;
+};
+export type PreviousRow = {
+  car_key: string; first_seen: string; eligible: boolean;
+  entered_at?: string | null; entered_from?: number | null; price?: number | null;
+};
+export function observeCars(cars: WatchCar[], previous: PreviousRow[], initialized: string[], now: string): InventoryRow[] {
   const known = new Map(previous.map((row) => [row.car_key, row]));
   const ready = new Set(initialized);
   return cars.map((car) => {
     const key = carKey(car), old = known.get(key);
-    return { car_key: key, src: car.src, first_seen: old?.first_seen ?? now, last_seen: now, eligible: old ? old.eligible : ready.has(car.src), car };
+    // A known car "enters" the watch when its last stored price was above the limit and it now matches.
+    const oldPrice = old ? Number(old.price) : NaN;
+    const entered = Number.isFinite(oldPrice) && oldPrice > WATCH.maxPrice && matchesWatch(car);
+    return {
+      car_key: key, src: car.src, first_seen: old?.first_seen ?? now, last_seen: now,
+      eligible: old ? old.eligible : ready.has(car.src),
+      entered_at: entered ? now : old?.entered_at ?? null,
+      entered_from: entered ? oldPrice : old?.entered_from ?? null,
+      car,
+    };
   });
 }
 export function matchesWatch(car: WatchCar): boolean {
-  return Number.isFinite(car.price) && car.price > 0 && car.price <= 10000 &&
-    Number.isInteger(car.year) && car.year >= 2020 && !car.res;
+  return Number.isFinite(car.price) && car.price > 0 && car.price <= WATCH.maxPrice &&
+    Number.isInteger(car.year) && car.year >= WATCH.minYear && !car.res;
 }
 export function safePushEndpoint(endpoint: string): boolean {
   try {
@@ -25,15 +45,26 @@ export function safePushEndpoint(endpoint: string): boolean {
        url.hostname.endsWith('.push.apple.com') || url.hostname.endsWith('.notify.windows.com'));
   } catch { return false; }
 }
-export function notification(cars: WatchCar[], tag: string) {
+// `from` is the previous price when the alert is a price drop below the limit; empty for a new listing.
+export type Alert = { car: WatchCar; from?: number | null };
+export function notification(alerts: Alert[], tag: string) {
   const nf = new Intl.NumberFormat('it-IT', { useGrouping: 'always' } as Intl.NumberFormatOptions);
-  const preview = cars.slice(0, 2).map((car) => ({
-    label: (car.brand + ' ' + car.model).trim().slice(0, 70) + ' · ' + car.year + ' · ' + nf.format(car.price) + ' €' + (car.cash ? ' con finanziamento' : ''),
+  const drops = alerts.filter((alert) => alert.from).length, fresh = alerts.length - drops;
+  const limit = nf.format(WATCH.maxPrice) + ' €';
+  const preview = alerts.slice(0, 2).map(({ car, from }) => ({
+    label: (car.brand + ' ' + car.model).trim().slice(0, 70) + ' · ' + car.year + ' · ' + nf.format(car.price) + ' €' +
+      (car.cash ? ' con finanziamento' : '') + (from ? ' (era ' + nf.format(from) + ' €)' : ''),
     url: car.url,
   }));
+  const title = !drops
+    ? (fresh === 1 ? 'Una nuova auto su Cerca auto' : fresh + ' nuove auto su Cerca auto')
+    : !fresh
+    ? (drops === 1 ? 'Un’auto è scesa sotto i ' + limit : drops + ' auto sono scese sotto i ' + limit)
+    : alerts.length + ' novità su Cerca auto: ' + fresh + (fresh === 1 ? ' nuova' : ' nuove') + ', ' + drops + (drops === 1 ? ' ribasso' : ' ribassi');
   return {
-    title: cars.length === 1 ? 'Una nuova auto su Cerca auto' : cars.length + ' nuove auto su Cerca auto',
-    body: preview.map((car) => car.label).join('\n') + (cars.length > 2 ? '\nE altre ' + (cars.length - 2) + ' auto. Apri la ricerca.' : ''),
-    cars: preview, count: cars.length, tag, created: new Date().toISOString(),
+    title,
+    body: preview.map((car) => car.label).join('\n') +
+      (alerts.length === 3 ? '\nE un’altra auto. Apri la ricerca.' : alerts.length > 3 ? '\nE altre ' + (alerts.length - 2) + ' auto. Apri la ricerca.' : ''),
+    cars: preview, count: alerts.length, tag, created: new Date().toISOString(),
   };
 }

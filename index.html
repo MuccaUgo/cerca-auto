@@ -256,8 +256,8 @@ body.has-selection .wrap{padding-bottom:190px}
 </dialog>
 
 <dialog class="watch-dialog" id="watchDialog" aria-labelledby="watchTitle">
-  <div class="row"><h2 id="watchTitle">Avvisi nuovi annunci</h2><button class="watch-close" id="watchClose" type="button" aria-label="Chiudi avvisi">×</button></div>
-  <p>Auto fino a <strong>10.000 €</strong>, immatricolate dal <strong>2020</strong>, dalle fonti attive. Solo nuovi annunci disponibili.</p>
+  <div class="row"><h2 id="watchTitle">Avvisi: novità e ribassi</h2><button class="watch-close" id="watchClose" type="button" aria-label="Chiudi avvisi">×</button></div>
+  <p>Auto fino a <strong>10.000 €</strong>, immatricolate dal <strong>2020</strong>, dalle fonti attive. Ti avviso per i nuovi annunci disponibili e quando un'auto già in elenco scende sotto i 10.000 €.</p>
   <div class="watch-times" aria-label="Orari dei controlli"><span>10:00</span><span>14:00</span><span>18:00</span></div>
   <p class="watch-hint">Ora italiana, anche con la webapp chiusa. Il prezzo con finanziamento viene segnalato come tale.</p>
   <p class="watch-hint" id="watchSetup"></p>
@@ -276,7 +276,7 @@ var FUNCTION_URL = "https://udhrplrxqxgiafwxtbqe.supabase.co/functions/v1/cerca-
 // Chiave pubblica (anon) del progetto Supabase: serve solo a chiamare la funzione.
 var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHJwbHJ4cXhnaWFmd3h0YnFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4NzMxNDYsImV4cCI6MjExMDQ0OTE0Nn0.IGw8x9AdKhWRMfIcU3CG7dHjbBQACOn1qlqDA75cNmo";
 
-var APP_VERSION = "10 · 17 nov 2026";
+var APP_VERSION = "11 · 17 nov 2026";
 
 var DEFAULTS={price:10000,year:2020,km:0,brand:"",body:"",sort:"price",text:"",fuel:[],gear:"",src:[],res:false,disc:false,fresh:false,clean:false};
 
@@ -584,6 +584,6 @@ if(typeof document!=="undefined"){(function(){
 })();}
 if(typeof module!=="undefined") module.exports={applyFilters:applyFilters,markChanges:markChanges,priceMap:priceMap,DEFAULTS:DEFAULTS,formatListingsForAI:formatListingsForAI};
 </script>
-<script src="./notifications.js?v=9"></script>
+<script src="./notifications.js?v=11"></script>
 </body>
 </html>

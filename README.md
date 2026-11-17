@@ -15,7 +15,10 @@ richiesto solo quando si tocca **Attiva notifiche**; è disponibile una prova
 e la disattivazione per il singolo dispositivo.
 
 Il server controlla le fonti alle **10:00, 14:00 e 18:00 Europe/Rome** e segnala
-nuovi annunci disponibili fino a **10.000 €**, immatricolati dal **2020**.
+nuovi annunci disponibili fino a **10.000 €**, immatricolati dal **2020**, e le
+auto già in elenco che scendono sotto i 10.000 € (con il prezzo precedente).
+Ogni auto viene segnalata una sola volta per dispositivo. La soglia e l'anno sono
+in `WATCH`, in `supabase/functions/cerca-auto-watch/helpers.ts`.
 I prezzi pubblicizzati con finanziamento sono indicati come tali. Il primo
 controllo crea lo storico senza notificare lo stock già esistente; una fonte
 che sparisce temporaneamente non cancella lo storico.
@@ -25,6 +28,9 @@ che sparisce temporaneamente non cancella lo storico.
 - `supabase/functions/cerca-auto-watch/`: scansioni, deduplicazione e invio.
 - `supabase/car-watch.sql`: tabelle con RLS e funzioni riservate al server.
 - `supabase/car-watch-schedule.sql`: pianificazione con cambio ora automatico.
+- `supabase/car-watch-price-drops.sql`: colonne aggiunte per gli avvisi sui ribassi.
+- `tests/watch_test.ts`: prova locale della funzione avvisi con database, catalogo
+  e servizio push finti: `deno run --allow-all tests/watch_test.ts`.
 
 Le chiavi VAPID e il token del job sono in Supabase Vault, mai nel repository.
 I nomi sono `cerca_auto_vapid` (JSON `publicKey`/`privateKey`) e

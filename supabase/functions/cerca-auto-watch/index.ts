@@ -1,5 +1,5 @@
 import webpush from 'npm:web-push@3.6.7';
-import { matchesWatch, notification, observeCars, safePushEndpoint, type WatchCar } from './helpers.ts';
+import { matchesWatch, notification, observeCars, safePushEndpoint, WATCH, type WatchCar } from './helpers.ts';
 
 const PROJECT = Deno.env.get('SUPABASE_URL')!;
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -91,7 +91,7 @@ async function scan() {
     const data = await res.json();
     if (!Array.isArray(data.cars) || !data.cars.length || !Array.isArray(data.sources)) throw new Error('No usable catalog');
     const [previous, initialized] = await Promise.all([
-      all('car_watch_inventory?select=car_key,first_seen,eligible', 'car_key'), all('car_watch_sources?select=name', 'name'),
+      all('car_watch_inventory?select=car_key,first_seen,eligible,entered_at,entered_from,price:car->price', 'car_key'), all('car_watch_sources?select=name', 'name'),
     ]);
     const known = new Map(previous.map((row) => [row.car_key, row]));
     const cars: WatchCar[] = data.cars.filter((car: WatchCar) => car && car.src && car.id !== undefined && car.id !== null && Number.isFinite(car.price) && car.price > 0);
@@ -104,20 +104,30 @@ async function scan() {
     const cutoff = new Date(Date.now() - 7 * 86400000).toISOString();
     for (const sub of subscriptions) {
       const sent = new Set((await all('car_watch_sent?select=car_key&subscription_id=eq.' + sub.id, 'car_key')).map((row) => row.car_key));
-      const fresh = rows.filter((row) => row.eligible && row.first_seen > sub.created_at && row.first_seen >= cutoff && !sent.has(row.car_key) && matchesWatch(row.car));
+      // Two reasons to alert, both only for events after this device subscribed and within the last week:
+      // a new listing that matches, or a known car whose price dropped below the limit.
+      const since = Date.parse(sub.created_at);
+      const fresh = rows.flatMap((row) => {
+        if (sent.has(row.car_key) || !matchesWatch(row.car)) return [];
+        const enteredAt = row.entered_at ? Date.parse(row.entered_at) : NaN;
+        const dropped = enteredAt > since && enteredAt >= Date.parse(cutoff);
+        const isNew = row.eligible && row.first_seen > sub.created_at && row.first_seen >= cutoff;
+        return dropped || isNew ? [{ row, from: dropped ? row.entered_from : null }] : [];
+      });
       if (!fresh.length) continue;
-      fresh.sort((a, b) => a.car.price - b.car.price);
+      fresh.sort((a, b) => a.row.car.price - b.row.car.price);
       try {
-        if (await send(sub, notification(fresh.map((row) => row.car), runId))) {
-          for (let i = 0; i < fresh.length; i += 200) await db('car_watch_sent?on_conflict=subscription_id,car_key', 'POST', fresh.slice(i, i + 200).map((row) => ({ subscription_id: sub.id, car_key: row.car_key })), 'resolution=ignore-duplicates');
+        if (await send(sub, notification(fresh.map((alert) => ({ car: alert.row.car, from: alert.from })), runId))) {
+          for (let i = 0; i < fresh.length; i += 200) await db('car_watch_sent?on_conflict=subscription_id,car_key', 'POST', fresh.slice(i, i + 200).map((alert) => ({ subscription_id: sub.id, car_key: alert.row.car_key })), 'resolution=ignore-duplicates');
           pushes++;
         }
       } catch (_error) { failed++; }
     }
     const count = rows.filter((row) => !known.has(row.car_key) && row.eligible).length;
+    const drops = rows.filter((row) => row.entered_at === now).length;
     const partial = data.sources.some((source: any) => !source.ok || source.got < source.expected);
-    await db('car_watch_runs?id=eq.' + runId, 'PATCH', { finished_at: new Date().toISOString(), status: partial || failed ? 'partial' : 'ok', sources: data.sources, cars_read: rows.length, new_cars: count, pushes_sent: pushes, error: failed ? failed + ' push deliveries failed' : null });
-    return { runId, cars: rows.length, newCars: count, pushes, partial, failed };
+    await db('car_watch_runs?id=eq.' + runId, 'PATCH', { finished_at: new Date().toISOString(), status: partial || failed ? 'partial' : 'ok', sources: data.sources, cars_read: rows.length, new_cars: count, price_drops: drops, pushes_sent: pushes, error: failed ? failed + ' push deliveries failed' : null });
+    return { runId, cars: rows.length, newCars: count, drops, pushes, partial, failed };
   } catch (error) {
     await db('car_watch_runs?id=eq.' + runId, 'PATCH', { finished_at: new Date().toISOString(), status: 'error', error: (error as Error).message }).catch(() => {});
     throw error;
@@ -143,7 +153,7 @@ Deno.serve(async (req: Request) => {
     }
     if (action === 'config' && req.method === 'GET') {
       const [conf, sub, runs] = await Promise.all([secrets(), device(req), db('car_watch_runs?select=finished_at,status,cars_read,new_cars&finished_at=not.is.null&order=started_at.desc&limit=1')]);
-      return json({ publicKey: conf.vapid.publicKey, timezone: 'Europe/Rome', hours: [10, 14, 18], maxPrice: 10000, minYear: 2020, device: sub ? { enabled: sub.enabled } : null, lastRun: runs[0] ?? null });
+      return json({ publicKey: conf.vapid.publicKey, timezone: 'Europe/Rome', hours: [10, 14, 18], maxPrice: WATCH.maxPrice, minYear: WATCH.minYear, device: sub ? { enabled: sub.enabled } : null, lastRun: runs[0] ?? null });
     }
     if (req.method !== 'POST') throw new ApiError(405, 'Metodo non consentito.');
     const raw = await req.text(); if (raw.length > 10000) throw new ApiError(413, 'Richiesta troppo grande.');
