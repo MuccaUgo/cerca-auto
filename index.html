@@ -228,6 +228,7 @@ body.has-selection .wrap{padding-bottom:190px}
           </div>
         </div>
       </details>
+      <a class="link" id="searchSubito" target="_blank" rel="noopener noreferrer" href="https://www.subito.it/annunci-lombardia/vendita/auto/?pe=10000&amp;ys=2020">Cerca su Subito ↗</a>
       <button class="link" id="reset" type="button" aria-label="Ripristina filtri">Ripristina</button>
     </div>
   </section>
@@ -333,7 +334,7 @@ var FUNCTION_URL = "https://udhrplrxqxgiafwxtbqe.supabase.co/functions/v1/cerca-
 // Chiave pubblica (anon) del progetto Supabase: serve solo a chiamare la funzione.
 var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHJwbHJ4cXhnaWFmd3h0YnFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4NzMxNDYsImV4cCI6MjExMDQ0OTE0Nn0.IGw8x9AdKhWRMfIcU3CG7dHjbBQACOn1qlqDA75cNmo";
 
-var APP_VERSION = "16 · 21 nov 2026";
+var APP_VERSION = "17 · 21 nov 2026";
 
 var DEFAULTS={price:10000,year:2020,km:0,brand:"",body:"",seller:"",sort:"price",text:"",fuel:[],gear:"",src:[],res:false,disc:false,fresh:false,clean:false};
 
@@ -643,6 +644,12 @@ if(typeof document!=="undefined"){(function(){
     if(!keepLimit) displayLimit=60;
     if(!fromInput) syncControls();
     syncChips();
+    var subito=new URL("https://www.subito.it/annunci-lombardia/vendita/auto/");
+    var query=[state.brand,state.text].filter(Boolean).join(" ").trim();
+    if(query) subito.searchParams.set("q",query);
+    if(state.price>0) subito.searchParams.set("pe",state.price);
+    if(state.year>0) subito.searchParams.set("ys",state.year);
+    $("searchSubito").href=subito.href;
     store.set("cerca-auto-filtri",state);
     var res=applyFilters(CARS,state,DEALS);
     renderDeals(res);

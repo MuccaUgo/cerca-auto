@@ -247,6 +247,10 @@ collegate allo stesso annuncio. Venditori con nome e comune coincidenti
 su portali diversi possono generare un suggerimento; questo da solo non
 conferma l'identità del veicolo.
 
+### Ricerca su Subito in Lombardia
+
+**Cerca su Subito ↗**, accanto a Ripristina, apre i risultati sul portale usando marca, testo, prezzo massimo e anno minimo. Funziona anche senza selezionare auto. Gli altri filtri si possono impostare su Subito. La ricerca esterna non importa annunci e non confronta duplicati.
+
 ### Collegare personalmente un annuncio Subito
 
 Seleziona una sola auto, tocca **Collega Subito** e confronta venditore,
