@@ -3,7 +3,7 @@
 // Altri siti: scrivere una funzione che restituisce { cars, expected } e aggiungerla a `own` in fondo.
 
 import { scoreDeals, type Deal } from "./deals.ts";
-import { collectSubito, SUBITO } from './subito.ts';
+import { collectSubito, dropKnownSubito, SUBITO } from './subito.ts';
 import { reconcileSubito, groupPartnerStock, collectPartnerStock, PARTNER_SOURCE, type MatchCar } from './partner.ts';
 import { applyPriceWarnings, collectLombardia, LOMBARDIA, mergeListings } from "./lombardia.ts";
 
@@ -325,8 +325,11 @@ Deno.serve(async (req: Request) => {
     { name: "AM Autoccasione", site: "amautoccasione.it", run: amAutoccasione },
     { name: LOMBARDIA.name, site: "autoscout24.it · Lombardia · fino a 10.000 € · dal 2020", run: () => collectLombardia(getHtmlOnce, knownDealers) },
   ];
-  const directAllowed = Deno.env.get('SUBITO_DIRECT_AUTHORIZED') === 'true';
-  if (directAllowed) own.push({name:SUBITO.name,site:'subito.it · Lombardia',run:()=>collectSubito(getHtmlOnce)});
+  // Lettura diretta di Subito: attiva per scelta del proprietario dell'app, anche se le condizioni del portale
+  // (art. 5 e 10) vietano l'accesso automatico. Si spegne con il secret SUBITO_DIRECT=off.
+  if (!/^(?:off|false|0)$/i.test(Deno.env.get('SUBITO_DIRECT') ?? '')) {
+    own.push({ name: SUBITO.name, site: 'subito.it · Lombardia · fino a 10.000 € · dal 2020', run: () => collectSubito(getHtmlOnce) });
+  }
   const dealers: Source[] = configured.map((d) => ({
     name: d.name,
     site: d.place + " (Autoscout24)",
@@ -343,9 +346,13 @@ Deno.serve(async (req: Request) => {
   const direct = ownRes.find(result=>result.name === SUBITO.name);
   const primary = mergeListings(ordered.flatMap((r) => r.cars).filter((c) => c.price > 0));
   const retained = new Set(primary);
-  const cars = groupPartnerStock(primary, reconcileSubito(direct?.cars || [],partner.cars).map(applyPriceWarnings));
+  // Le auto Subito già lette su un altro sito restano con quella fonte e con il loro storico.
+  const known = dropKnownSubito(primary, direct?.cars || []);
+  const cars = groupPartnerStock(primary, reconcileSubito(known.cars,partner.cars).map(applyPriceWarnings));
   const results = [...ownRes, ...dealerRes].map((r) => {
-    if (r.name === SUBITO.name) return r;
+    if (r.name === SUBITO.name) {
+      return { ...r, cars: known.cars, got: known.cars.length, expected: known.cars.length, coverage: r.coverage ? { ...r.coverage, duplicates: known.duplicates } : r.coverage };
+    }
     const unique = r.cars.filter((c) => retained.has(c));
     return { ...r, cars: unique, got: unique.length, expected: r.name === LOMBARDIA.name ? unique.length : r.expected };
   });

@@ -1,5 +1,8 @@
-// Adattatore regionale attivabile previa autorizzazione di Subito. Ricerca senza account, delle auto in vendita in Lombardia (regione 4 del portale),
+// Subito.it: lettura diretta, senza account, delle auto in vendita in Lombardia (regione 4 del portale),
 // con prezzo pubblicizzato fino a 10.000 € e immatricolazione dal 2020, di privati e aziende.
+// Le condizioni generali di Subito (art. 5 e 10) vietano l'accesso con strumenti automatici e l'uso dei contenuti
+// da parte di aggregatori non autorizzati: la lettura è attiva per scelta del proprietario dell'app e si spegne
+// con il secret SUBITO_DIRECT=off sulla funzione cerca-auto.
 // Dei privati non si conservano nome, telefono o ID dell'account: come "venditore" vale il singolo annuncio.
 export const SUBITO = { name: 'Subito Lombardia', maxPrice: 10000, minYear: 2020, minPrice: 1500, regionId: '4', pageSize: 30, maxPages: 60 };
 
@@ -41,6 +44,8 @@ export function parseSubitoPage(html: string, page = 1) {
 const text = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const feature = (item: Item, uri: string): Item => item?.features?.[uri]?.values?.[0] ?? {};
 const number = (value: unknown) => Number(String(value ?? '').replace(/[^\d]/g, '')) || 0;
+// Confronti fra testi: minuscolo, senza accenti né punteggiatura.
+const key = (value: unknown) => text(value).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 export function listId(item: Item): string { return /:list:(\d+)/.exec(String(item?.urn ?? ''))?.[1] ?? ''; }
 
 const ACRONYMS = new Set(['BMW', 'MG', 'DS', 'DR', 'BYD', 'KGM', 'GWM', 'SWM', 'JAC', 'VW', 'BAIC', 'XEV']);
@@ -63,9 +68,48 @@ function versionFrom(subject: string, brand: string, model: string, catalogVersi
   return s || (/^altro allestimento$/i.test(catalogVersion) ? '' : catalogVersion);
 }
 
-// Microcar "senza patente" e noleggi non sono auto in vendita confrontabili con le altre.
-const MICROCAR = /senza\s+patente|minicar|micro\s*car|quadriciclo|\b50\s*cc\b|\b(?:aixam|ligier|chatenet|bellier|casalini|grecav|tazzari|estrima)\b/i;
-const RENTAL = /noleggio|\brat[ae]\b|\/\s*mese\b|al\s+mese\b|canone|leasing/i;
+// Il catalogo di Subito aggiunge la generazione al modello ("Panda 3ª serie", "500 (2015-2024)"):
+// la tolgo, così il nome coincide con quello degli altri siti per doppioni, filtri e confronti.
+export function cleanModel(raw: string): string {
+  const model = text(raw).replace(/\s*\([^)]*\)\s*$/, '')
+    .replace(/\s+\d+[ª°](?:\s*[-/]\s*\d+[ª°])*\s*(?:serie|ser\.?|s\.?)?(?:\s.*)?$/i, '').trim();
+  return model || text(raw);
+}
+
+// Marca o modello "Altro": tengo l'annuncio solo se il titolo comincia con una marca nota seguita dal modello.
+const KNOWN_BRANDS = ['Alfa Romeo', 'Land Rover', 'Lynk & Co', 'Mercedes-Benz', 'Mercedes', 'Abarth', 'Audi', 'BMW', 'BYD', 'Chevrolet',
+  'Citroen', 'Cupra', 'Dacia', 'DR', 'DS', 'EVO', 'Fiat', 'Ford', 'Honda', 'Hyundai', 'Jaecoo', 'Jaguar', 'Jeep', 'Kia', 'Lancia',
+  'Leapmotor', 'Lexus', 'Mahindra', 'Maserati', 'Mazda', 'MG', 'Mini', 'Mitsubishi', 'Nissan', 'Omoda', 'Opel', 'Peugeot', 'Polestar',
+  'Porsche', 'Renault', 'Seat', 'Skoda', 'Smart', 'SsangYong', 'Subaru', 'Suzuki', 'Tesla', 'Toyota', 'Volkswagen', 'VW', 'Volvo'];
+const UNKNOWN = /^altr[oa]\b/i;
+const NOT_A_MODEL = /^(?:auto|automobile|macchina|vettura|usat[ao]|nuov[ao]|vendo|vendesi|privat[ao]|ottim[ao]|perfett[ao]|neopatentat[io]|incidentat[ao]|serie)$/;
+const trimWord = (word: string) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+export function modelFromSubject(subject: string): { brand: string; model: string; lead: string } | null {
+  const words = text(subject).split(' ').map(trimWord).filter((w) => key(w));
+  const keys = words.map(key);
+  for (const brand of KNOWN_BRANDS) {
+    const parts = key(brand).split(' ');
+    if (!parts.every((part, i) => keys[i] === part)) continue;
+    const rest = words.slice(parts.length);
+    if (!rest.length || NOT_A_MODEL.test(key(rest[0]))) return null;
+    let model = key(rest[0]) === 'classe' && rest[1] ? rest[0] + ' ' + rest[1] : rest[0];
+    if (model.length > 3 && model === model.toUpperCase()) model = model.charAt(0) + model.slice(1).toLowerCase();
+    model = model.charAt(0).toUpperCase() + model.slice(1);
+    return { brand: brand === 'VW' ? 'Volkswagen' : brand === 'Mercedes' ? 'Mercedes-Benz' : brand, model, lead: words.slice(0, parts.length).join(' ') };
+  }
+  return null;
+}
+
+// Microcar "senza patente", quadricicli e noleggi non sono auto in vendita confrontabili con le altre.
+const MICROCAR = /senza\s+patente|mini\s*car|micro\s*car|golf\s*car|quadricicl|\b50\s*cc\b|\b(?:aixam|ligier|chatenet|bellier|casalini|grecav|tazzari|estrima|minauto|jinpeng|microlino|xev|mobilize)\b/i;
+const MICRO_MODEL = /^(?:ami|topolino|twizy|rocks e|yoyo|duo|microlino)\b/;
+// "Ex leasing" è un'auto in vendita; noleggi, leasing, subentri e rate no.
+const RENTAL = /noleggio|\/\s*mese\b|al\s+mese\b|canone|\brat[ae]\s+(?:da|di|mensil)|subentr|cessione\s+(?:del\s+)?contratto|cedo\s+(?:il\s+)?contratto|(?<!\bex[\s-]?)leasing/i;
+// Nel testo, solo per prezzi bassi: offerte di noleggio o leasing con anticipo o rata al posto del prezzo.
+const RENTAL_BODY = /canone\s+mensile|cedo\s+(?:il\s+)?contratto|cessione\s+(?:del\s+)?contratto|subentr\w*|leasing\s+full|simulazion[ei]\s+(?:da\s+|di\s+)?\d{2}\b/i;
+// Chi cerca o compra auto, anche con le lettere separate per aggirare i filtri del portale.
+const WANTED = /^\W*(?:cerc(?:o|hiamo)|compr(?:o|iamo)|acquist(?:o|iamo))\b|\b(?:cerc(?:o|hiamo)|compr(?:o|iamo)|acquist(?:o|iamo)|ritir(?:o|iamo))\s+(?:la\s+tua\s+|vostr[ae]\s+|qualsiasi\s+|tutte\s+le\s+)?(?:auto|vettur|macchin)/i;
+const SPELLED = /\bc[\W_]{1,8}e[\W_]{1,8}r[\W_]{1,8}c[\W_]{1,8}o\b|\bc[\W_]{1,8}o[\W_]{1,8}m[\W_]{1,8}p[\W_]{1,8}r[\W_]{1,8}o\b/i;
 const GENERIC = /diversi\s+colori|diverse\s+versioni|immagini\s+(?:indicative|dimostrative)|varie\s+(?:disponibilit|colorazion)/i;
 // "fananziamento" e simili: i refusi sono frequenti negli annunci.
 const REAL = /prezzo\s*(?:reale|vero)\b|prezzovero|senza\s+vincoli\b|nessun\s+vincolo\b|no\s+vincoli\b|anche\s+senza\s+f\w{0,3}nanzi|(?:senza|nessun[oa]?|no)\s+(?:alcun[oa]?\s+)?(?:obbligo|vincol\w*)\s+(?:di\s+|a\s+|al\s+|ad\s+)?(?:un\s+)?f\w{0,3}nanzi|non\s+(?:è\s+|e'\s+)?(?:vincolat|subordinat|legat|condizionat)\w*\s+(?:a|al|ad)\s+(?:un\s+)?f\w{0,3}nanzi/i;
@@ -93,8 +137,25 @@ export function priceTerms(subject: string, body: string, price: number) {
   return { real, cash, note: notes.join(' · ') };
 }
 
+// Molti privati lasciano l'anno proposto dal modulo. Se gli anni scritti nel titolo o nel testo sono tutti
+// precedenti al 2020, o se un'auto di meno di due anni ha oltre 100.000 km, l'anno inserito non è credibile.
+const YEAR = /(?<!€\s?)(?<!\d)((?:19[5-9]|20[0-2])\d)(?!\d)(?!\s*(?:€|euro|eur\b|km|cc|kg|kw|cv))/gi;
+const STATED_YEAR = /\b(?:anno|immatricol\w*\.?)\s*(?:di\s+|del\s+|nel\s+|il\s+|a\s+|:\s*)?(?:(?:0?[1-9]|1[0-2])[/.-]|(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+)?((?:19|20)\d{2})\b/gi;
+export function wrongYear(subject: string, body: string, model: string, isPrivate: boolean, km: number, reg: string, year: number, now = new Date()): boolean {
+  const own = new Set(key(model).split(' '));
+  const years: number[] = [];
+  const pick = (value: string, pattern: RegExp) => { for (const m of value.matchAll(pattern)) if (!own.has(m[1])) years.push(Number(m[1])); };
+  pick(subject, YEAR);
+  pick(body, STATED_YEAR);
+  if (isPrivate) pick(body.trim().split('\n')[0].slice(0, 160), YEAR);
+  if (years.length && Math.max(...years) < SUBITO.minYear) return true;
+  const month = /^(\d{1,2})\/(\d{4})$/.exec(reg);
+  const age = now.getFullYear() + now.getMonth() / 12 - (month ? Number(month[2]) + (Number(month[1]) - 1) / 12 : year + 0.5);
+  return age < 2 && km > 100000;
+}
+
 // Converte un annuncio in auto del catalogo, oppure restituisce il motivo dell'esclusione.
-export function subitoCar(item: Item): SubitoCar | string {
+export function subitoCar(item: Item, now = new Date()): SubitoCar | string {
   const id = listId(item);
   if (!id || item?.kind !== 'AdItem') return 'non_valido';
   if (String(item.geo?.region?.id) !== SUBITO.regionId) return 'fuori_lombardia';
@@ -103,27 +164,39 @@ export function subitoCar(item: Item): SubitoCar | string {
   if (url.origin !== 'https://www.subito.it' || url.username || url.password || !url.pathname.startsWith('/auto/') || !url.pathname.endsWith('-'+id+'.htm')) return 'non_valido';
   const pack: Item[] = item.features?.['/car']?.values ?? [];
   const catalog = (label: string) => text(pack.find((v) => v?.label === label)?.value);
-  const brand = brandCase(catalog('Marca')), model = catalog('Modello');
+  const subject = text(item.subject), body = String(item.body ?? '');
+  let brand = brandCase(catalog('Marca')), model = cleanModel(catalog('Modello')), lead = catalog('Marca');
   if (!brand || !model) return 'non_valido';
+  if (UNKNOWN.test(brand) || UNKNOWN.test(model)) {
+    const guess = modelFromSubject(subject);
+    if (!guess) return 'modello_sconosciuto';
+    ({ brand, model, lead } = guess);
+  }
   const price = number(feature(item, '/price').key), reg = text(feature(item, '/register_date').value);
   const year = number(feature(item, '/year').key) || Number(reg.split('/').at(-1)) || 0;
   if (!price) return 'non_valido';
-  if (price > SUBITO.maxPrice || !Number.isInteger(year) || year < SUBITO.minYear || year > new Date().getFullYear() + 1) return 'fuori_filtri';
-  const subject = text(item.subject);
-  if (MICROCAR.test(subject + ' ' + brand)) return 'microcar';
-  if (price < SUBITO.minPrice || RENTAL.test(subject)) return 'noleggio_o_rata';
+  if (price > SUBITO.maxPrice || !Number.isInteger(year) || year < SUBITO.minYear || year > now.getFullYear() + 1) return 'fuori_filtri';
+  if (WANTED.test(subject) || SPELLED.test(subject + '\n' + body)) return 'cerco_o_compro';
+  if (MICROCAR.test(subject + ' ' + brand) || MICRO_MODEL.test(key(model))) return 'microcar';
+  if (price < SUBITO.minPrice || RENTAL.test(subject) || (price < 6000 && RENTAL_BODY.test(body))) return 'noleggio_o_rata';
   const adv = item.advertiser ?? {}, company = adv.company === true || Number(adv.type) === 1;
+  // brumbrum ripubblica qui il proprio stock, già letto per intero dal suo sito.
+  if (company && /^brumbrum$/i.test(text(adv.shopName))) return 'brumbrum';
+  const km = number(feature(item, '/mileage_scalar').key);
+  if (wrongYear(subject, body, model, !company, km, reg, year, now)) return 'anno_incoerente';
+  const power = /(\d+)\s*cv/i.exec(text(feature(item, '/power').value)), cv = power ? Number(power[1]) : 0;
+  // Auto potenti quasi nuove a pochi euro, o auto di privati a 0 km sotto i 5.000 €: anticipi, rate o annunci civetta.
+  if ((cv >= 250 && price < 9000 && year >= now.getFullYear() - 2) || (!company && km === 0 && price < 5000 && year >= now.getFullYear() - 1)) return 'prezzo_implausibile';
   const vin = text(feature(item, '/vin').value);
   const fuelLabel = text(feature(item, '/fuel').value), gear = text(feature(item, '/gearbox').value);
-  const power = /(\d+)\s*cv/i.exec(text(feature(item, '/power').value));
   const town = text(item.geo?.town?.value), province = text(item.geo?.city?.shortName);
-  const terms = priceTerms(subject, String(item.body ?? ''), price);
+  const terms = priceTerms(subject, body, price);
   const seats = number(feature(item, '/seats').value);
   return {
-    src: SUBITO.name, id, brand, model, ver: versionFrom(subject, catalog('Marca'), model, catalog('Versione')), year, reg: reg || String(year),
-    km: number(feature(item, '/mileage_scalar').key), price, old: 0,
+    src: SUBITO.name, id, brand, model, ver: versionFrom(subject, lead, model, catalog('Versione')), year, reg: reg || String(year),
+    km, price, old: 0,
     gear: /^man/i.test(gear) ? 'Manuale' : /automat|sequenzial/i.test(gear) ? 'Automatico' : '', res: false, unavailable: false,
-    fuel: fuel(fuelLabel), fuelLabel: fuelLabel === 'Altro' ? '' : fuelLabel, cv: power ? Number(power[1]) : 0,
+    fuel: fuel(fuelLabel), fuelLabel: fuelLabel === 'Altro' ? '' : fuelLabel, cv,
     body: text(feature(item, '/car_type').value), ...(seats ? { seats } : {}), url: url.origin + url.pathname,
     real: terms.real, note: terms.note, ...(terms.cash ? { cash: terms.cash } : {}),
     ...(vin ? {matchIdentity:{vin}} : {}), portal: 'subito', sellerType: company ? 'dealer' : 'private',
@@ -159,4 +232,33 @@ export async function collectSubito(getHtml: (url: string) => Promise<string>, b
     error: complete ? '' : 'Ricerca Subito parziale: lette ' + pagesRead + ' di ' + first.pages + ' pagine',
     coverage: { pagesRead, pagesExpected: first.pages, searchResults: first.total, uniqueRead: seen.size, skipped, failedPages, maxPrice: SUBITO.maxPrice, minYear: SUBITO.minYear, region: 'Lombardia' },
   };
+}
+
+// Molti saloni pubblicano la stessa auto anche su Subito: tengo la copia già letta altrove e scarto quella di Subito.
+// Stessa marca, anno e chilometri esatti, modello compatibile e prezzo quasi uguale; con km tondi serve il prezzo quasi identico.
+// Vale anche fra due annunci Subito dello stesso salone.
+type Comparable = { brand: string; model: string; year: number; km: number; price: number; sellerId?: string };
+function fingerprint(c: Comparable): string { return Number(c.km) >= 1000 && Number.isInteger(Number(c.year)) ? key(c.brand) + '|' + c.year + '|' + Number(c.km) : ''; }
+function sameModel(a: Comparable, b: Comparable): boolean {
+  const x = key(a.model).split(' ')[0], y = key(b.model).split(' ')[0];
+  return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x));
+}
+function samePrice(a: Comparable, b: Comparable): boolean {
+  const p = Number(a.price), q = Number(b.price), gap = Math.abs(p - q) / Math.max(p, q);
+  return Number(b.km) % 1000 === 0 ? gap <= 0.01 : gap <= 0.03 || Math.abs(p - q) <= 300;
+}
+function put(map: Map<string, Comparable[]>, k: string, car: Comparable) { if (k) (map.get(k) ?? map.set(k, []).get(k)!).push(car); }
+export function dropKnownSubito<T extends Comparable>(others: Comparable[], subito: T[]): { cars: T[]; duplicates: number } {
+  const elsewhere = new Map<string, Comparable[]>(), mine = new Map<string, Comparable[]>(), out: T[] = [];
+  for (const car of others) put(elsewhere, fingerprint(car), car);
+  let duplicates = 0;
+  for (const car of subito) {
+    const k = fingerprint(car);
+    const twin = !!k && [...(elsewhere.get(k) ?? []), ...(mine.get(k) ?? []).filter((o) => o.sellerId === car.sellerId)]
+      .some((o) => sameModel(o, car) && samePrice(o, car));
+    if (twin) { duplicates++; continue; }
+    put(mine, k, car);
+    out.push(car);
+  }
+  return { cars: out, duplicates };
 }

@@ -50,6 +50,7 @@ h1{font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:-.01
 .panel.filters{padding:12px;gap:10px}
 .filter-options{position:relative}
 .filter-options > .link{position:absolute;right:0;top:0;min-height:36px;font-size:12px}
+.filter-options > #searchSubito{position:static;display:block;width:max-content;margin:2px 0 0 auto}
 .advanced-filters > summary{cursor:pointer;min-height:36px;padding:8px 92px 8px 0;font-size:13px;font-weight:600;color:var(--accent)}
 .filter-count{font-size:11px;background:var(--chip);color:var(--ink);padding:2px 6px;border-radius:999px;margin-left:6px;white-space:nowrap}
 .advanced-content{display:flex;flex-direction:column;gap:12px;padding-top:8px;border-top:1px solid var(--line)}
@@ -291,6 +292,7 @@ body.has-selection .wrap{padding-bottom:190px}
     <div class="app-footer"><span class="ver-app" id="appver"></span><button class="link" id="updFooter" type="button" title="Scarica l'ultima versione della pagina">Aggiorna app</button></div>
     <div>Le etichette Nuova e Scesa di prezzo confrontano la ricerca con quella precedente fatta da questo dispositivo.</div>
     <div>AutoScout24 Lombardia: ricerca aggiuntiva fino a 10.000 €, dal 2020. La località del venditore viene verificata tramite CAP lombardo. Annunci e conteggi dipendono dai risultati restituiti dal portale; eventuali pagine mancanti sono segnalate.</div>
+    <div>Subito Lombardia: annunci di privati e saloni fino a 10.000 €, dal 2020, senza le auto già presenti sugli altri siti, lo stock brumbrum, noleggi e leasing, microcar, annunci «cerco/compro» e anni in contraddizione con il testo. Subito non autorizza la lettura automatica: la fonte è attiva per scelta del proprietario e si può spegnere.</div>
   </div>
 </div>
 
@@ -335,14 +337,14 @@ body.has-selection .wrap{padding-bottom:190px}
   </div>
 </dialog>
 
-<script src="./personal-offers.js?v=16"></script>
+<script src="./personal-offers.js?v=17"></script>
 <script src="./deals.js?v=16"></script>
 <script>
 var FUNCTION_URL = "https://udhrplrxqxgiafwxtbqe.supabase.co/functions/v1/cerca-auto";
 // Chiave pubblica (anon) del progetto Supabase: serve solo a chiamare la funzione.
 var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHJwbHJ4cXhnaWFmd3h0YnFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4NzMxNDYsImV4cCI6MjExMDQ0OTE0Nn0.IGw8x9AdKhWRMfIcU3CG7dHjbBQACOn1qlqDA75cNmo";
 
-var APP_VERSION = "18 · 21 nov 2026";
+var APP_VERSION = "19 · 21 nov 2026";
 
 var DEFAULTS={excludedBrands:"Mahindra",excludedTerms:"",price:10000,year:2020,km:0,brand:"",body:"",seller:"",sort:"price",text:"",fuel:[],gear:"",src:[],res:false,disc:false,fresh:false,clean:false};
 
@@ -374,11 +376,13 @@ function applyFilters(cars,s,ratings){
   var t=s.text.trim().toLowerCase();
   var normalize=function(value){return String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();};
   var tokens=function(value){return String(value||"").split(",").map(normalize).filter(Boolean);};
-  var excludedBrands=new Set(tokens(s.excludedBrands===undefined?DEFAULTS.excludedBrands:s.excludedBrands));
+  var excludedBrands=tokens(s.excludedBrands===undefined?DEFAULTS.excludedBrands:s.excludedBrands);
   var excludedTerms=tokens(s.excludedTerms);
   var out=[];
   cars.forEach(function(c){
-    if(excludedBrands.has(normalize(c.brand))) return;
+    // "Mercedes" esclude anche "Mercedes-Benz", "Alfa" anche "Alfa Romeo".
+    var brandName=normalize(c.brand);
+    if(excludedBrands.some(function(b){return brandName===b||brandName.indexOf(b+" ")===0;})) return;
     if(excludedTerms.length){
       var title=" "+normalize([c.brand,c.model,c.ver,c.body].join(" "))+" ";
       if(excludedTerms.some(function(term){return title.includes(" "+term+" ");})) return;
@@ -576,7 +580,7 @@ if(typeof document!=="undefined"){(function(){
   }
   $("linkSubito").addEventListener("click",function(){
     var chosen=selectedCars();
-    if(chosen.length===1) PersonalOffers.edit(chosen[0],function(){render(true,true);},CARS);
+    if(chosen.length===1) PersonalOffers.edit(chosen[0],function(){render(true,true);},CARS,{price:state.price,year:state.year});
   });
   function selectionChanged(){
     $("copyStatus").textContent="";

@@ -84,14 +84,17 @@
     cache = next;
   }
 
-  function searchUrl(car) {
+  function searchUrl(car, filters) {
     const url = new URL('https://www.subito.it/annunci-lombardia/vendita/auto/');
     const model = [car.brand, car.model].filter(Boolean).join(' ');
     if (model) url.searchParams.set('q', model);
+    // Stessi limiti di prezzo e anno dei filtri della webapp.
+    if (filters && Number(filters.price) > 0) url.searchParams.set('pe', String(filters.price));
+    if (filters && Number(filters.year) > 0) url.searchParams.set('ys', String(filters.year));
     return url.href;
   }
 
-  function edit(car, onChange, allCars) {
+  function edit(car, onChange, allCars, filters) {
     const previous = stored(car);
     const dialog = document.createElement('dialog');
     dialog.className = 'watch-dialog';
@@ -118,7 +121,7 @@
     const remove = dialog.querySelector('[data-remove]');
     dialog.querySelector('[data-car]').textContent = [[car.brand, car.model, car.ver].filter(Boolean).join(' '), car.reg,
       Number(car.km) > 0 ? Number(car.km).toLocaleString('it-IT') + ' km' : '', car.sellerName || car.src].filter(Boolean).join(' · ');
-    dialog.querySelector('[data-search]').href = searchUrl(car);
+    dialog.querySelector('[data-search]').href = searchUrl(car, filters);
     field.value = previous?.url || '';
     amount.value = previous?.price || '';
     remove.hidden = !previous;

@@ -13,6 +13,8 @@ test('personal linking accepts Auto pages only, removes tracking and limits sear
   const search = new URL(offers.searchUrl(car));
   assert.equal(search.pathname,'/annunci-lombardia/vendita/auto/');
   assert.equal(search.searchParams.get('q'),'Fiat Panda');
+  const filtered = new URL(offers.searchUrl(car,{price:10000,year:2020}));
+  assert.equal(filtered.searchParams.get('pe'),'10000');assert.equal(filtered.searchParams.get('ys'),'2020');
 });
 test('a local match is separate from catalog, can be edited/removed by alias, and cannot link two cars', () => {
   const another = {...car,id:'002'};

@@ -234,11 +234,24 @@ confluisce nella scheda di un'altra fonte.
 
 Test del catalogo: `node --test tests/partner-stock.test.cjs tests/lombardia.test.cjs`.
 
-L'adattatore diretto `subito.ts` già presente sul server è conservato. Solo
-in presenza di un'autorizzazione che copre l'accesso diretto al portale si
-attiva `SUBITO_DIRECT_AUTHORIZED=true` sulla funzione `cerca-auto`.
-Il valore predefinito è disattivato. Quando attivo, il controllo regionale
-riporta pagine raccolte ed eventuali letture parziali. Una scheda letta
+### Lettura diretta di Subito (attiva)
+
+La funzione `cerca-auto` legge direttamente le auto di Subito in Lombardia
+(fino a 10.000 €, dal 2020) con l'adattatore `subito.ts`. Le condizioni generali
+di Subito (art. 5 e 10) vietano l'accesso con strumenti automatici e l'uso dei
+contenuti da parte di aggregatori non autorizzati: la lettura è attiva per
+scelta del proprietario dell'app. Per spegnerla basta il secret
+`SUBITO_DIRECT=off` sulla funzione `cerca-auto`, senza nuovo deploy.
+
+Restano fuori: auto già lette su altri siti (stessa marca, anno, km esatti e
+prezzo quasi uguale) e annunci ripetuti dello stesso salone, lo stock che
+brumbrum ripubblica su Subito, noleggi, leasing e subentri (anche quando il
+prezzo è l'anticipo), microcar e quadricicli, annunci di chi cerca o compra
+auto, marca o modello «Altro» non ricavabili dal titolo, anni contraddetti dal
+testo o dai chilometri, prezzi impossibili per l'auto. Il modello perde la
+generazione del catalogo («Panda 3ª serie» diventa «Panda»). Dei privati non si
+conservano nome, telefono o account. Il controllo regionale riporta pagine
+raccolte, letture parziali, motivi di esclusione e doppioni. Una scheda letta
 direttamente e presente anche nello stock del salone conta come una sola
 offerta Subito. Il prezzo e le condizioni provengono dalla scheda letta
 direttamente, e i dati economici discordanti ricevono un'avvertenza.
