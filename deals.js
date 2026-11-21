@@ -3,13 +3,25 @@
   "use strict";
   var RULES={minPeers:3,minSellers:2,maxPerSeller:3,maxYearGap:2,maxKmGap:40000,powerTolerance:.15,minSaving:500,minSavingRatio:.05,maxSavingRatio:.35};
   function norm(value){return String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();}
-  function key(car){return car.src+"|"+car.id;}
+  function key(car){return car.vehicleKey || car.src+"|"+car.id;}
   function seller(car){return car.sellerId?'as24:'+car.sellerId:norm(car.sellerName||car.src);}
   function price(car){
     var advertised=Number(car.price),cash=Number(car.cash);
     // Un prezzo cash esplicito ma non valido non può diventare il prezzo promozionale.
     if(car.cash!==undefined&&car.cash!==null&&car.cash!==0&&car.cash!=="") return Number.isFinite(cash)&&cash>0?cash:NaN;
     return Number.isFinite(advertised)&&advertised>0?advertised:NaN;
+  }
+  // Confronta una sola quotazione per vettura. I prezzi noti senza finanziamento
+  // hanno priorità; fra offerte con lo stesso grado di certezza usa la meno cara.
+  function rankOffer(car){
+    if(!car.offers || !car.offers.length) return car;
+    var best=null;
+    car.offers.forEach(function(offer){
+      if(offer.manual || offer.note || offer.res || offer.unavailable || !Number.isFinite(price(offer))) return;
+      var known=!!(offer.cash || offer.real), priorKnown=best && !!(best.cash || best.real);
+      if(!best || (known && !priorKnown) || (known===priorKnown && price(offer)<price(best))) best=offer;
+    });
+    return best;
   }
   function median(values){var a=values.slice().sort(function(x,y){return x-y;});return (a[(a.length-1)>>1]+a[a.length>>1])/2;}
   function urlIdentity(car){try{var u=new URL(car.url);if(!/^https?:$/.test(u.protocol)) return "";return u.hostname.toLowerCase()+u.pathname.replace(/\/$/,"");}catch(e){return "";}}
@@ -29,6 +41,13 @@
     var year=asOfYear||new Date().getFullYear(),groups=Object.create(null),seen=Object.create(null),ratings=Object.create(null);
     // Ordine stabile e URL unici: un annuncio ripubblicato non è un nuovo confronto.
     cars.slice().sort(function(a,b){return key(a).localeCompare(key(b));}).forEach(function(car){
+      if(car.possibleMatches && car.possibleMatches.length) return;
+      var quote=rankOffer(car);
+      if(!quote) return;
+      if(quote!==car) car=Object.assign({},car,{
+        vehicleKey:key(car),price:quote.price,cash:quote.cash,real:quote.real,note:quote.note,
+        res:quote.res,unavailable:quote.unavailable,url:quote.url,quoteSource:quote.src
+      });
       if(!eligible(car,year)) return;
       var identity=urlIdentity(car);if(seen[identity]) return;seen[identity]=true;
       var group=family(car);(groups[group]||(groups[group]=[])).push(car);
@@ -49,7 +68,7 @@
         if(saving<RULES.minSaving||ratio<RULES.minSavingRatio||ratio>RULES.maxSavingRatio) return;
         // La percentuale è un confronto fra annunci. Le condizioni incerte riducono la priorità.
         var penalty=car.cash?2:car.real?0:4;
-        ratings[key(car)]={key:key(car),price:price(car),reference:reference,saving:saving,percent:Math.round(ratio*100),peers:peers.length,sellers:sellers,score:ratio*100-penalty,cash:!!car.cash,uncertain:!car.cash&&!car.real,peerKeys:peers.map(key)};
+        ratings[key(car)]={key:key(car),url:car.url,source:car.quoteSource||car.src,price:price(car),reference:reference,saving:saving,percent:Math.round(ratio*100),peers:peers.length,sellers:sellers,score:ratio*100-penalty,cash:!!car.cash,uncertain:!car.cash&&!car.real,peerKeys:peers.map(key)};
       });
     });
     return ratings;

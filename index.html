@@ -79,7 +79,7 @@ h1{font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:-.01
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:12px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
 label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--muted)}
-input[type=number],input[type=search],select{
+input[type=number],input[type=search],input[type=url],select{
   font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1px solid var(--line);
   border-radius:8px;padding:8px 10px;width:100%;min-height:42px}
 input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -157,6 +157,13 @@ body.has-selection .wrap{padding-bottom:190px}
 .deal-line span{color:var(--muted)}
 .deal-help ul{padding-left:20px;font-size:14px}
 .note{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:6px;max-width:65ch}
+.personal-offer-form{display:grid;gap:10px}
+.offer-list{grid-column:1/-1;border-top:1px solid var(--line);margin-top:5px;padding-top:5px;font-size:13px}
+.offer-list summary{color:var(--accent);cursor:pointer;font-weight:600;padding:4px 0}
+.offer-list ul{list-style:none;padding:0;margin:0}
+.offer-list li{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;padding:5px 0}
+.offer-list small{color:var(--muted)}
+#moreCars{align-self:center}
 </style>
 </head>
 <body>
@@ -252,11 +259,13 @@ body.has-selection .wrap{padding-bottom:190px}
   </div>
   <div class="selection-note" id="selectionNotice" role="status" aria-live="polite"></div>
   <ul class="list" id="list"></ul>
+  <button class="btn ghost" id="moreCars" type="button" hidden>Mostra altre auto</button>
 
   <section class="selection-bar panel" id="selectionBar" aria-label="Annunci selezionati" hidden>
     <div class="row">
       <strong id="selectionCount" aria-live="polite"></strong>
       <div class="actions">
+        <button class="link" id="linkSubito" type="button" aria-haspopup="dialog" hidden>Collega Subito</button>
         <button class="btn ghost" id="clearSelected" type="button">Deseleziona tutte</button>
         <button class="btn" id="copySelected" type="button">Copia per AI</button>
       </div>
@@ -293,7 +302,7 @@ body.has-selection .wrap{padding-bottom:190px}
   <ul>
     <li>Stessa marca, modello, alimentazione e cambio, potenza entro il 15%. Distinguo cabrio e trazione integrale quando indicate.</li>
     <li>I confronti non sono più recenti e non hanno meno chilometri: al massimo 2 anni e 40.000 km di scarto.</li>
-    <li>Servono almeno 3 annunci di 2 venditori. Considero al massimo i 3 più vicini per ciascun venditore ed elimino i link duplicati.</li>
+    <li>Ogni vettura confermata conta una volta. I possibili doppioni sono esclusi dalla stima. Servono almeno 3 annunci di 2 venditori. Considero al massimo i 3 più vicini per ciascun venditore ed elimino i link duplicati.</li>
     <li>Segnalo un buon affare da almeno il 5% e 500 € sotto la mediana dei confronti. Scarti oltre il 35% sono troppo anomali per questa classifica.</li>
     <li>Uso il prezzo senza finanziamento, se disponibile. Gli annunci con avvertenze sui prezzi sono esclusi sia dalla classifica sia dai confronti. Gli altri vincoli non verificati riducono la priorità. In questa modalità anche il limite di prezzo usa il prezzo senza finanziamento noto.</li>
     <li>Escludo prenotate, annunci con avvertenze, veicoli commerciali e dati essenziali mancanti o non validi.</li>
@@ -317,34 +326,60 @@ body.has-selection .wrap{padding-bottom:190px}
   </div>
 </dialog>
 
-<script src="./deals.js?v=15"></script>
+<script src="./personal-offers.js?v=16"></script>
+<script src="./deals.js?v=16"></script>
 <script>
 var FUNCTION_URL = "https://udhrplrxqxgiafwxtbqe.supabase.co/functions/v1/cerca-auto";
 // Chiave pubblica (anon) del progetto Supabase: serve solo a chiamare la funzione.
 var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHJwbHJ4cXhnaWFmd3h0YnFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4NzMxNDYsImV4cCI6MjExMDQ0OTE0Nn0.IGw8x9AdKhWRMfIcU3CG7dHjbBQACOn1qlqDA75cNmo";
 
-var APP_VERSION = "15 · 17 nov 2026";
+var APP_VERSION = "16 · 21 nov 2026";
 
 var DEFAULTS={price:10000,year:2020,km:0,brand:"",body:"",seller:"",sort:"price",text:"",fuel:[],gear:"",src:[],res:false,disc:false,fresh:false,clean:false};
 
+function catalogOffers(car){
+  return car.offers && car.offers.length ? car.offers : [car];
+}
+function personalOffer(car){
+  return typeof PersonalOffers === "undefined" ? null : PersonalOffers.get(car);
+}
+function visibleQuote(car, state){
+  var options=catalogOffers(car).filter(function(o){
+    var price=state.sort==="deal"?CarDeals.price(o):o.price;
+    return (!state.src.length || state.src.includes(o.src)) &&
+      (!state.price || price<=state.price) && (!state.clean || (!o.cash && !o.note)) &&
+      (!state.res || (!o.res && !o.unavailable)) && (!state.disc || o.old || o.drop) &&
+      (!state.fresh || car.isNew || o.drop);
+  });
+  if(!options.length) return null;
+  if(options.length===1) return options[0];
+  var amount=state.sort==="deal"?CarDeals.price:function(o){return o.price;};
+  return options.reduce(function(a,b){return amount(a)<=amount(b)?a:b;});
+}
+function quoteDetails(o){
+  return [o.cash?"con finanziamento":o.real?"senza vincoli dichiarato dal venditore":"condizioni da verificare",
+    o.cash?"senza finanziamento "+Number(o.cash).toLocaleString("it-IT")+" €":"",
+    o.note,o.res?"prenotata":"",o.unavailable?"non disponibile":""].filter(Boolean).join(" · ");
+}
 function applyFilters(cars,s,ratings){
   var t=s.text.trim().toLowerCase();
-  var out=cars.filter(function(c){
-    if(s.price && (s.sort==="deal"?CarDeals.price(c):c.price)>s.price) return false;
-    if(c.year<s.year) return false;
-    if(s.km && c.km>s.km) return false;
-    if(s.brand && c.brand!==s.brand) return false;
-    if(s.seller && (c.sellerType||"dealer")!==s.seller) return false;
-    if(s.body && c.body.toLowerCase()!==s.body) return false;
-    if(s.fuel.length && s.fuel.indexOf(c.fuel)<0) return false;
-    if(s.gear && c.gear!==s.gear) return false;
-    if(s.src.length && s.src.indexOf(c.src)<0) return false;
-    if(s.res && (c.res||c.unavailable)) return false;
-    if(s.disc && !c.old && !c.drop) return false;
-    if(s.fresh && !c.isNew && !c.drop) return false;
-    if(s.clean && (c.cash || c.note)) return false;
-    if(t && (c.brand+" "+c.model+" "+c.ver).toLowerCase().indexOf(t)<0) return false;
-    return true;
+  var out=[];
+  cars.forEach(function(c){
+    if(c.year<s.year) return;
+    if(s.km && c.km>s.km) return;
+    if(s.brand && c.brand!==s.brand) return;
+    if(s.seller && (c.sellerType||"dealer")!==s.seller) return;
+    if(s.body && c.body.toLowerCase()!==s.body) return;
+    if(s.fuel.length && s.fuel.indexOf(c.fuel)<0) return;
+    if(s.gear && c.gear!==s.gear) return;
+    if(t && (c.brand+" "+c.model+" "+c.ver).toLowerCase().indexOf(t)<0) return;
+    var quote=visibleQuote(c,s);
+    if(!quote) return;
+    if(quote===c || !c.offers) out.push(c);
+    else out.push(Object.assign({},c,{
+      vehicleKey:carKey(c),displaySource:quote.src,url:quote.url,price:quote.price,
+      old:quote.old||0,drop:quote.drop||0,real:quote.real,cash:quote.cash,note:quote.note,res:quote.res,unavailable:quote.unavailable
+    }));
   });
   if(s.sort==="deal") return out.sort(function(a,b){return CarDeals.compare(a,b,ratings||{});});
   var by={price:function(a,b){return a.price-b.price||a.km-b.km;},
@@ -357,14 +392,18 @@ function applyFilters(cars,s,ratings){
 function markChanges(cars,prev){
   cars.forEach(function(c){
     var k=c.src+"|"+c.id;
-    c.isNew=!!prev && !(k in prev);
-    c.drop=prev && k in prev && prev[k]>c.price ? prev[k]-c.price : 0;
+    c.isNew=!!prev && ![k].concat(c.aliases||[]).some(function(key){return key in prev;});
+    catalogOffers(c).forEach(function(o){
+      var previous=prev && prev[o.src+"|"+o.id];
+      o.drop=previous>o.price ? previous-o.price : 0;
+      if(o.src===c.src && o.id===c.id) c.drop=o.drop;
+    });
   });
   return cars;
 }
-function priceMap(cars){var m={};cars.forEach(function(c){m[c.src+"|"+c.id]=c.price;});return m;}
+function priceMap(cars){var m=Object.create(null);cars.forEach(function(c){catalogOffers(c).forEach(function(o){m[o.src+"|"+o.id]=o.price;});});return m;}
 
-function carKey(c){return c.src+"|"+c.id;}
+function carKey(c){return c.vehicleKey || c.src+"|"+c.id;}
 function formatListingsForAI(cars,updated){
   if(!cars.length) return "";
   var nf=new Intl.NumberFormat("it-IT",{useGrouping:"always"});
@@ -405,6 +444,15 @@ function formatListingsForAI(cars,updated){
     if(c.note) rows.push("Avvertenze: "+c.note);
     rows.push("Venditore / fonte: "+(c.src||"Non indicato"));
     rows.push("Link: "+(c.url||"Non disponibile"));
+    var linked=catalogOffers(c).slice(), personal=personalOffer(c);
+    if(personal) linked.push(personal);
+    if(linked.length>1){
+      rows.push("Offerte per la stessa auto (contala una sola volta):");
+      linked.forEach(function(o){rows.push(o.src+" — "+money(o.price)+" · "+quoteDetails(o)+" · "+o.url);});
+    }
+    if(c.possibleMatches && c.possibleMatches.length){
+      rows.push("Possibile doppione da verificare: "+c.possibleMatches.map(function(m){return m.url;}).join(" · "));
+    }
     return rows.join("\n");
   }).join("\n\n");
 }
@@ -482,7 +530,7 @@ if(typeof document!=="undefined"){(function(){
     if(msg){el.textContent=msg;return;}
     if(!META){el.textContent="Nessuna ricerca ancora. Premi Cerca ora.";return;}
     var okN=META.sources.filter(function(s){return s.ok;}).length;
-    var tot=META.sources.reduce(function(a,s){return a+s.got;},0);
+    var tot=CARS.length;
     var bad=META.sources.filter(function(s){return !s.ok||s.got<s.expected;}).map(function(s){
       return s.coverage&&s.error ? s.name+": "+s.error : s.ok ? s.name+" "+s.got+" di "+s.expected : s.name+" non raggiungibile";
     });
@@ -494,6 +542,8 @@ if(typeof document!=="undefined"){(function(){
     var chosen=selectedCars();
     var hidden=chosen.length-visible.filter(function(c){return !!selected[carKey(c)];}).length;
     $("selectionBar").hidden=!chosen.length;
+    $("linkSubito").hidden=chosen.length!==1;
+    if(chosen.length===1) $("linkSubito").textContent=personalOffer(chosen[0])?"Modifica link Subito":"Collega Subito";
     document.body.classList.toggle("has-selection",chosen.length>0);
     $("selectionCount").textContent=chosen.length+(chosen.length===1?" auto selezionata":" auto selezionate")+(hidden?" · "+hidden+" fuori dai filtri":"");
     $("copySelected").disabled=copyBusy||!chosen.length;
@@ -504,6 +554,10 @@ if(typeof document!=="undefined"){(function(){
       input.closest("li").classList.toggle("selected",input.checked);
     });
   }
+  $("linkSubito").addEventListener("click",function(){
+    var chosen=selectedCars();
+    if(chosen.length===1) PersonalOffers.edit(chosen[0],function(){render(true,true);},CARS);
+  });
   function selectionChanged(){
     $("copyStatus").textContent="";
     $("selectionNotice").textContent="";
@@ -545,20 +599,48 @@ if(typeof document!=="undefined"){(function(){
       copyBusy=false; syncSelection(applyFilters(CARS,state,DEALS));
     });
   });
+  function currentDeal(car){
+    var rating=DEALS[carKey(car)];
+    if(!rating || (state.price && rating.price>state.price) ||
+       (state.src.length && !state.src.includes(rating.source))) return null;
+    if(state.clean && rating.cash) return null;
+    return rating;
+  }
+  function offerMarkup(car){
+    var linked=catalogOffers(car).slice(), personal=personalOffer(car), html="";
+    if(personal) linked.push(personal);
+    if(linked.length>1){
+      html='<details class="offer-list" open><summary>'+linked.length+' offerte per questa auto</summary><ul>'+
+        linked.map(function(o){
+          return '<li><a class="open" rel="noopener noreferrer" target="_blank" href="'+esc(o.url)+'">'+esc(o.src)+'</a><b>'+
+            (o.price>0?nf.format(o.price)+' €':'Prezzo non indicato')+'</b><small>'+esc(quoteDetails(o))+'</small></li>';
+        }).join("")+'</ul></details>';
+    }
+    if(car.possibleMatches && car.possibleMatches.length){
+      html+='<details class="offer-list"><summary>Possibile doppione · verifica gli annunci</summary><ul>'+
+        car.possibleMatches.map(function(m){
+          return '<li><a class="open" rel="noopener noreferrer" target="_blank" href="'+esc(m.url)+'">'+esc(m.src)+'</a></li>';
+        }).join("")+'</ul></details>';
+    }
+    return html;
+  }
   function renderDeals(results){
     $("bestDeals").hidden=!CARS.length;
-    var matches=results.filter(function(c){return DEALS[carKey(c)]&&(!state.price||CarDeals.price(c)<=state.price);}).sort(function(a,b){return CarDeals.compare(a,b,DEALS);});
+    var matches=results.filter(function(c){return currentDeal(c);}).sort(function(a,b){return CarDeals.compare(a,b,DEALS);});
     $("dealSummary").textContent=matches.length?matches.length+" nei tuoi filtri":"nessun affare con dati sufficienti";
     $("dealIntro").textContent=matches.length?"Prezzi sotto quelli di auto simili, dello stesso anno o più vecchie e con almeno gli stessi km. Stima da verificare sul singolo annuncio.":"Non ci sono annunci che superano i criteri con questi filtri. Non forzo una classifica quando mancano confronti affidabili.";
     $("sortDeals").hidden=!matches.length;
     $("dealPicks").innerHTML=matches.slice(0,3).map(function(c){
       var d=DEALS[carKey(c)];
-      return '<li><div class="row"><a href="'+esc(c.url)+'" target="_blank" rel="noopener">'+esc(c.brand+" "+c.model)+'</a><strong>'+nf.format(d.price)+' €'+(d.cash?' senza finanziamento':'')+'</strong></div>'+
-        '<p>'+esc(c.reg)+' · '+nf.format(c.km)+' km · '+esc(c.src)+'</p><p class="deal-reason">Circa '+d.percent+'% sotto i confronti · '+nf.format(Math.round(d.saving))+' € di differenza</p>'+
+      return '<li><div class="row"><a href="'+esc(d.url)+'" target="_blank" rel="noopener">'+esc(c.brand+" "+c.model)+'</a><strong>'+nf.format(d.price)+' €'+(d.cash?' senza finanziamento':'')+'</strong></div>'+
+        '<p>'+esc(c.reg)+' · '+nf.format(c.km)+' km · '+esc(d.source)+'</p><p class="deal-reason">Circa '+d.percent+'% sotto i confronti · '+nf.format(Math.round(d.saving))+' € di differenza</p>'+
         '<p>Mediana '+nf.format(Math.round(d.reference))+' € · '+d.peers+' annunci, '+d.sellers+' venditori'+(d.uncertain?' · Vincoli di prezzo da verificare':'')+'</p></li>';
     }).join("");
   }
-  function render(fromInput){
+  var displayLimit=60;
+  $("moreCars").addEventListener("click",function(){displayLimit+=60;render(true,true);});
+  function render(fromInput,keepLimit){
+    if(!keepLimit) displayLimit=60;
     if(!fromInput) syncControls();
     syncChips();
     store.set("cerca-auto-filtri",state);
@@ -570,21 +652,27 @@ if(typeof document!=="undefined"){(function(){
     $("advancedCount").hidden=!advanced;
     $("advancedCount").textContent=advanced+" attiv"+(advanced===1?"o":"i");
     var nNew=res.filter(function(c){return c.isNew;}).length;
-    $("bySrc").textContent=SITES.map(function(n){return [n,res.filter(function(c){return c.src===n;}).length];}).filter(function(x){return x[1];}).map(function(x){return x[0]+" "+x[1];}).join(" · ")+(nNew?" · "+nNew+" nuove":"");
+    var counts=new Map();
+    res.forEach(function(car){
+      new Set(catalogOffers(car).map(function(o){return o.src;})).forEach(function(src){counts.set(src,(counts.get(src)||0)+1);});
+    });
+    $("bySrc").textContent=SITES.filter(function(src){return counts.has(src);}).map(function(src){return src+" "+counts.get(src);}).join(" · ")+(nNew?" · "+nNew+" nuove":"");
+    $("moreCars").hidden=res.length<=displayLimit;
+    $("moreCars").textContent="Mostra altre "+Math.min(60,Math.max(0,res.length-displayLimit))+" auto";
     syncSelection(res);
     if(!CARS.length){$("list").innerHTML='<li class="empty">Premi Cerca ora per leggere gli annunci dai siti.</li>';return;}
     if(!res.length){$("list").innerHTML='<li class="empty">Nessuna auto con questi filtri. Alza il prezzo massimo o abbassa l\'anno minimo.</li>';return;}
-    $("list").innerHTML=res.map(function(c){
+    $("list").innerHTML=res.slice(0,displayLimit).map(function(c){
       var disc=c.old?c.old-c.price:0;
-      var deal=DEALS[carKey(c)];
+      var deal=currentDeal(c);
       if(deal&&state.price&&deal.price>state.price) deal=null;
       return '<li class="car'+(c.res?' res':'')+(selected[carKey(c)]?' selected':'')+'">'+
         '<div><div class="name">'+esc(c.brand+" "+c.model)+'</div><div class="ver">'+esc(c.ver)+'</div></div>'+
         '<div class="price"><b>'+nf.format(c.price)+' €</b>'+(c.old?'<s>'+nf.format(c.old)+' €</s><em>−'+nf.format(disc)+' €</em>':'')+(c.cash?'<small>solo con finanziamento</small>':/finanziamento segnalato/i.test(c.note||'')?'<small>Prezzo senza finanziamento da verificare</small>':'')+'</div>'+
         '<div class="facts"><span>'+esc(c.reg)+'</span><span>'+nf.format(c.km)+' km</span><span>'+esc(c.fuelLabel)+'</span><span>'+esc(c.gear)+'</span>'+(c.cv?'<span>'+c.cv+' CV</span>':'')+(c.body?'<span>'+esc(c.body)+'</span>':'')+'</div>'+
         (c.sellerName||c.city?'<div class="ver" style="grid-column:1/-1">'+esc([c.sellerName,c.city].filter(Boolean).join(" · "))+'</div>':'')+
-        (deal?'<div class="deal-line"><b>Buon affare stimato</b> · circa '+deal.percent+'% sotto i confronti <span>('+deal.peers+' annunci, '+deal.sellers+' venditori'+(deal.cash?', sul prezzo senza finanziamento':'')+')</span></div>':'')+
-        '<div class="foot"><div class="tags"><span class="tag src-'+(SITES.indexOf(c.src)%6)+'">'+esc(c.src)+'</span>'+
+        (deal?'<div class="deal-line"><b>Buon affare stimato</b>'+((c.offers||[]).length?' · '+esc(deal.source)+' '+nf.format(deal.price)+' €':'')+' · circa '+deal.percent+'% sotto i confronti <span>('+deal.peers+' annunci, '+deal.sellers+' venditori'+(deal.cash?', sul prezzo senza finanziamento':'')+')</span></div>':'')+
+        '<div class="foot"><div class="tags"><span class="tag src-'+(SITES.indexOf(c.src)%6)+'">'+esc(c.displaySource||c.src)+'</span>'+
         (c.isNew?'<span class="tag new">Nuova</span>':'')+
         (c.drop?'<span class="tag new">Scesa di '+nf.format(c.drop)+' €</span>':'')+
         (c.cash?'<span class="tag warn">Senza finanziamento '+nf.format(c.cash)+' €</span>':'')+
@@ -594,7 +682,7 @@ if(typeof document!=="undefined"){(function(){
         (c.unavailable?'<span class="tag warn">Non disponibile ora</span>':'')+
         (c.res?'<span class="tag warn">Prenotata</span>':'')+'</div>'+
         '<div class="car-actions"><label class="check select-car"><input class="pick" type="checkbox" data-key="'+esc(carKey(c))+'" aria-label="'+esc('Seleziona '+c.brand+' '+c.model+' · '+c.reg+' · '+nf.format(c.km)+' km · '+c.src)+'"'+(selected[carKey(c)]?' checked':'')+'>Seleziona</label>'+
-        '<a class="open" href="'+esc(c.url)+'" target="_blank" rel="noopener">Apri annuncio</a></div></div></li>';
+        '<a class="open" href="'+esc(c.url)+'" target="_blank" rel="noopener">Apri annuncio</a></div></div>'+offerMarkup(c)+'</li>';
     }).join("");
   }
   function load(data,prev){
@@ -602,7 +690,7 @@ if(typeof document!=="undefined"){(function(){
     CARS=markChanges(data.cars,prev);
     DEALS=CarDeals.calculate(CARS);
     var kept={};
-    CARS.forEach(function(c){var key=carKey(c);if(selected[key]) kept[key]=true;});
+    CARS.forEach(function(c){var key=carKey(c);if([key].concat(c.aliases||[]).some(function(k){return selected[k];})) kept[key]=true;});
     var missing=Object.keys(selected).length-Object.keys(kept).length;
     selected=kept;
     $("copyStatus").textContent="";
