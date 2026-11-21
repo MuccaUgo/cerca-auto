@@ -140,9 +140,11 @@ export function priceTerms(subject: string, body: string, price: number) {
 
 // Molti privati lasciano l'anno proposto dal modulo. Se gli anni scritti nel titolo o nel testo sono tutti
 // precedenti al 2020, o se un'auto di meno di due anni ha troppi km per la sua età, l'anno inserito non è credibile.
-const YEAR = /(?<!€\s?)(?<!\d)((?:19[5-9]|20[0-2])\d)(?!\d)(?!\s*(?:€|euro|eur\b|km|cc|kg|kw|cv))/gi;
+// Un anno dopo un numero romano ("500 III 2015") indica la serie, non l'immatricolazione.
+const YEAR = /(?<!€\s?)(?<!\d)(?<!\b(?:II|III|IV|V|VI|VII|VIII)\s)((?:19[5-9]|20[0-2])\d)(?!\d)(?!\s*(?:€|euro|eur\b|km|cc|kg|kw|cv))/gi;
 const STATED_YEAR = /\b(?:anno|immatricol\w*\.?)\s*(?:di\s+|del\s+|nel\s+|il\s+|a\s+|:\s*)?(?:(?:0?[1-9]|1[0-2])[/.-]|(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+)?((?:19|20)\d{2})\b/gi;
 export function wrongYear(subject: string, body: string, model: string, isPrivate: boolean, km: number, age: number): boolean {
+  // Numeri del modello (Peugeot 2008) e anni della generazione nel catalogo ("500 (2015-2024)") non sono l'immatricolazione.
   const own = new Set(key(model).split(' '));
   const years: number[] = [];
   const pick = (value: string, pattern: RegExp) => { for (const m of value.matchAll(pattern)) if (!own.has(m[1])) years.push(Number(m[1])); };
@@ -186,14 +188,15 @@ export function subitoCar(item: Item, now = new Date()): SubitoCar | string {
   const km = number(feature(item, '/mileage_scalar').key);
   const month = /^(\d{1,2})\/(\d{4})$/.exec(reg);
   const age = Math.max(0, now.getFullYear() + now.getMonth() / 12 - (month ? Number(month[2]) + (Number(month[1]) - 1) / 12 : year + 0.5));
-  if (wrongYear(subject, body, model, !company, km, age)) return 'anno_incoerente';
-  // Auto potenti quasi nuove a pochi euro (anticipi o rate), o auto di privati con meno di due anni a prezzi
-  // da rottame: annunci civetta o auto vecchie con l'anno sbagliato.
-  if ((cv >= 250 && price < 9000 && age < 3) || (!company && age < 2 && (price < 3500 || (km === 0 && price < 5000)))) return 'prezzo_implausibile';
+  if (wrongYear(subject, body, model + ' ' + catalog('Modello'), !company, km, age)) return 'anno_incoerente';
+  const terms = priceTerms(subject, body, price);
+  // Prezzi impossibili per un'auto dal 2020: auto potenti quasi nuove a pochi euro (anticipi o rate), meno di
+  // 3.500 € senza danni dichiarati, auto di privati a 0 km sotto i 5.000 €. Annunci civetta o anni sbagliati.
+  const damaged = terms.note.includes(NOTES.damage);
+  if ((cv >= 250 && price < 9000 && age < 3) || (price < 3500 && !damaged) || (!company && km === 0 && price < 5000 && age < 2)) return 'prezzo_implausibile';
   const vin = text(feature(item, '/vin').value);
   const fuelLabel = text(feature(item, '/fuel').value), gear = text(feature(item, '/gearbox').value);
   const town = text(item.geo?.town?.value), province = text(item.geo?.city?.shortName);
-  const terms = priceTerms(subject, body, price);
   const seats = number(feature(item, '/seats').value);
   return {
     src: SUBITO.name, id, brand, model, ver: versionFrom(subject, lead, model, catalog('Versione')), year, reg: reg || String(year),

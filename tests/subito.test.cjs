@@ -99,9 +99,11 @@ test('skips registration years contradicted by the listing, but not model number
   assert.equal(car('43',{subject:'Fiat grande punto',body:'Vendo grande punto 1.3 multi jet 2015 sempre curata'},year(2025,95000)),'anno_incoerente');
   assert.equal(car('44',{subject:'Mercedes Classe A 170'},{...catalog('MERCEDES','Classe A (W/C169)'),...year(2025,163000)}),'anno_incoerente');
   assert.equal(typeof car('45',{subject:'Peugeot 2008 1.2 PureTech 130'},catalog('PEUGEOT','2008 2ª serie')),'object');
+  assert.equal(typeof car('59',{advertiser:dealer,subject:'FIAT 500 III 2015 - 500 1.0 hybrid Star 70cv'},catalog('FIAT','500 (2015-2024)')),'object');
+  assert.equal(typeof car('62',{advertiser:dealer,subject:'Fiat Tipo II 2016 - 1.6 Mjt'},catalog('FIAT','Tipo (2015-->)')),'object');
   assert.equal(typeof car('46',{advertiser:dealer,body:'Concessionaria dal 1985. Garanzia 12 mesi.'}),'object');
   assert.equal(typeof car('47',{body:'Gomme anno 2019, immatricolata nel 2021'},year(2021,60000)),'object');
-  assert.equal(typeof car('48',{subject:'Fiat Panda 1999 euro trattabili'},{'/price':{values:[{key:'1999'}]}}),'object');
+  assert.equal(typeof car('48',{subject:'Fiat Panda con 2010 euro di optional'}),'object');
   const reg=(r,km)=>({'/year':{values:[{key:r.slice(3)}]},'/register_date':{values:[{value:r}]},'/mileage_scalar':{values:[{key:String(km)}]}});
   assert.equal(car('49',{subject:'FIAT GRANDE PUNTO 1.2 BENZINA',body:'Buongiorno\nIn vendita FIAT GRANDE PUNTO 1.2 FIRE BENZINA 2010 CON SOLI 57.000 KM!!'},{...catalog('FIAT','Grande Punto'),'/price':{values:[{key:'5500'}]},...reg('11/2026',57000)}),'anno_incoerente');
   assert.equal(car('60',{advertiser:dealer},reg('11/2026',30000)),'anno_incoerente');
@@ -115,6 +117,9 @@ test('skips prices that cannot be a sale: powerful new cars for a few thousand e
   assert.equal(car('54',{subject:'REGAL RAPTOR, 100% ELETTRICA',advertiser:dealer,body:'MINICAR a 2 POSTI, 100% ELETTRICA'},catalog('PIAGGIO','Porter')),'microcar');
   assert.equal(car('55',{subject:'Microcar elettrica'},{'/power':{values:[{value:'3 kW / 4 Cv'}]}}),'microcar');
   assert.equal(typeof car('56',{body:'Schermo con mini carplay, sensori'}),'object');
+  assert.equal(car('57',{advertiser:dealer,subject:'Honda HR-V 1.5 i-VTEC'},{...catalog('HONDA','HR-V 2ª serie'),...year(2021,36000),'/price':{values:[{key:'2300'}]}}),'prezzo_implausibile');
+  const damaged=car('58',{subject:'Hyundai i20 incidentata'},{...catalog('HYUNDAI','i20 3ª serie'),...year(2022,90000),'/price':{values:[{key:'1500'}]}});
+  assert.equal(damaged.note,S.NOTES.damage);
 });
 test('reads a declared price without financing and flags conditional prices',()=>{
   const ke=S.priceTerms('Fiat Panda','PREZZO SENZA FINANZIAMENTO: € 13900,00\n PREZZO PROMOZIONALE KE AUTO+: € 9999,00',9999);
