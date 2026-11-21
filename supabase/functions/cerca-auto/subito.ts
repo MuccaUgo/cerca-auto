@@ -101,8 +101,9 @@ export function modelFromSubject(subject: string): { brand: string; model: strin
 }
 
 // Microcar "senza patente", quadricicli e noleggi non sono auto in vendita confrontabili con le altre.
-const MICROCAR = /senza\s+patente|mini\s*car|micro\s*car|golf\s*car|quadricicl|\b50\s*cc\b|\b(?:aixam|ligier|chatenet|bellier|casalini|grecav|tazzari|estrima|minauto|jinpeng|microlino|xev|mobilize)\b/i;
+const MICROCAR = /senza\s+patente|\bmini\s*car\b|\bmicro\s*car\b|\bgolf\s*car\b|quadricicl|\b50\s*cc\b|\b(?:aixam|ligier|chatenet|bellier|casalini|grecav|tazzari|estrima|minauto|jinpeng|microlino|xev|mobilize)\b/i;
 const MICRO_MODEL = /^(?:ami|topolino|twizy|rocks e|yoyo|duo|microlino)\b/;
+const MICRO_TEXT = /senza\s+patente|\bmini\s*car\b|\bmicro\s*car\b|quadricicl/i;
 // "Ex leasing" è un'auto in vendita; noleggi, leasing, subentri e rate no.
 const RENTAL = /noleggio|\/\s*mese\b|al\s+mese\b|canone|\brat[ae]\s+(?:da|di|mensil)|subentr|cessione\s+(?:del\s+)?contratto|cedo\s+(?:il\s+)?contratto|(?<!\bex[\s-]?)leasing/i;
 // Nel testo, solo per prezzi bassi: offerte di noleggio o leasing con anticipo o rata al posto del prezzo.
@@ -138,20 +139,18 @@ export function priceTerms(subject: string, body: string, price: number) {
 }
 
 // Molti privati lasciano l'anno proposto dal modulo. Se gli anni scritti nel titolo o nel testo sono tutti
-// precedenti al 2020, o se un'auto di meno di due anni ha oltre 100.000 km, l'anno inserito non è credibile.
+// precedenti al 2020, o se un'auto di meno di due anni ha troppi km per la sua età, l'anno inserito non è credibile.
 const YEAR = /(?<!€\s?)(?<!\d)((?:19[5-9]|20[0-2])\d)(?!\d)(?!\s*(?:€|euro|eur\b|km|cc|kg|kw|cv))/gi;
 const STATED_YEAR = /\b(?:anno|immatricol\w*\.?)\s*(?:di\s+|del\s+|nel\s+|il\s+|a\s+|:\s*)?(?:(?:0?[1-9]|1[0-2])[/.-]|(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+)?((?:19|20)\d{2})\b/gi;
-export function wrongYear(subject: string, body: string, model: string, isPrivate: boolean, km: number, reg: string, year: number, now = new Date()): boolean {
+export function wrongYear(subject: string, body: string, model: string, isPrivate: boolean, km: number, age: number): boolean {
   const own = new Set(key(model).split(' '));
   const years: number[] = [];
   const pick = (value: string, pattern: RegExp) => { for (const m of value.matchAll(pattern)) if (!own.has(m[1])) years.push(Number(m[1])); };
   pick(subject, YEAR);
   pick(body, STATED_YEAR);
-  if (isPrivate) pick(body.trim().split('\n')[0].slice(0, 160), YEAR);
+  if (isPrivate) pick(body.trim().slice(0, 300), YEAR);
   if (years.length && Math.max(...years) < SUBITO.minYear) return true;
-  const month = /^(\d{1,2})\/(\d{4})$/.exec(reg);
-  const age = now.getFullYear() + now.getMonth() / 12 - (month ? Number(month[2]) + (Number(month[1]) - 1) / 12 : year + 0.5);
-  return age < 2 && km > 100000;
+  return age < 2 && km > 20000 + 60000 * age;
 }
 
 // Converte un annuncio in auto del catalogo, oppure restituisce il motivo dell'esclusione.
@@ -177,16 +176,20 @@ export function subitoCar(item: Item, now = new Date()): SubitoCar | string {
   if (!price) return 'non_valido';
   if (price > SUBITO.maxPrice || !Number.isInteger(year) || year < SUBITO.minYear || year > now.getFullYear() + 1) return 'fuori_filtri';
   if (WANTED.test(subject) || SPELLED.test(subject + '\n' + body)) return 'cerco_o_compro';
-  if (MICROCAR.test(subject + ' ' + brand) || MICRO_MODEL.test(key(model))) return 'microcar';
+  const power = /(\d+)\s*cv/i.exec(text(feature(item, '/power').value)), cv = power ? Number(power[1]) : 0;
+  // Sotto i 20 CV è un quadriciclo, qualunque cosa dica il catalogo.
+  if (MICROCAR.test(subject + ' ' + brand) || MICRO_MODEL.test(key(model)) || MICRO_TEXT.test(body) || (cv > 0 && cv < 20)) return 'microcar';
   if (price < SUBITO.minPrice || RENTAL.test(subject) || (price < 6000 && RENTAL_BODY.test(body))) return 'noleggio_o_rata';
   const adv = item.advertiser ?? {}, company = adv.company === true || Number(adv.type) === 1;
   // brumbrum ripubblica qui il proprio stock, già letto per intero dal suo sito.
   if (company && /^brumbrum$/i.test(text(adv.shopName))) return 'brumbrum';
   const km = number(feature(item, '/mileage_scalar').key);
-  if (wrongYear(subject, body, model, !company, km, reg, year, now)) return 'anno_incoerente';
-  const power = /(\d+)\s*cv/i.exec(text(feature(item, '/power').value)), cv = power ? Number(power[1]) : 0;
-  // Auto potenti quasi nuove a pochi euro, o auto di privati a 0 km sotto i 5.000 €: anticipi, rate o annunci civetta.
-  if ((cv >= 250 && price < 9000 && year >= now.getFullYear() - 2) || (!company && km === 0 && price < 5000 && year >= now.getFullYear() - 1)) return 'prezzo_implausibile';
+  const month = /^(\d{1,2})\/(\d{4})$/.exec(reg);
+  const age = Math.max(0, now.getFullYear() + now.getMonth() / 12 - (month ? Number(month[2]) + (Number(month[1]) - 1) / 12 : year + 0.5));
+  if (wrongYear(subject, body, model, !company, km, age)) return 'anno_incoerente';
+  // Auto potenti quasi nuove a pochi euro (anticipi o rate), o auto di privati con meno di due anni a prezzi
+  // da rottame: annunci civetta o auto vecchie con l'anno sbagliato.
+  if ((cv >= 250 && price < 9000 && age < 3) || (!company && age < 2 && (price < 3500 || (km === 0 && price < 5000)))) return 'prezzo_implausibile';
   const vin = text(feature(item, '/vin').value);
   const fuelLabel = text(feature(item, '/fuel').value), gear = text(feature(item, '/gearbox').value);
   const town = text(item.geo?.town?.value), province = text(item.geo?.city?.shortName);
@@ -209,6 +212,7 @@ export function subitoCar(item: Item, now = new Date()): SubitoCar | string {
 export async function collectSubito(getHtml: (url: string) => Promise<string>, budgetMs = 60000) {
   const deadline = Date.now() + budgetMs, first = parseSubitoPage(await getHtml(subitoUrl(1)), 1);
   const cars = new Map<string, SubitoCar>(), seen = new Set<string>(), skipped: Record<string, number> = {};
+  const examples: Record<string, string[]> = {};   // qualche titolo per motivo, per controllare i filtri
   let pagesRead = 1, failedPages = 0;
   const add = (items: Item[]) => { for (const item of items) {
     const id = listId(item);
@@ -216,7 +220,10 @@ export async function collectSubito(getHtml: (url: string) => Promise<string>, b
     seen.add(id);
     try {
       const car = subitoCar(item);
-      if (typeof car === 'string') skipped[car] = (skipped[car] ?? 0) + 1; else cars.set(car.id, car);
+      if (typeof car !== 'string') { cars.set(car.id, car); continue; }
+      skipped[car] = (skipped[car] ?? 0) + 1;
+      const list = examples[car] ??= [];
+      if (list.length < 6 && car !== 'fuori_filtri') list.push(text(item.subject).slice(0, 60) + ' · ' + number(feature(item, '/price').key) + ' €');
     } catch (_) { skipped.non_valido = (skipped.non_valido ?? 0) + 1; }
   } };
   add(first.items);
@@ -230,7 +237,7 @@ export async function collectSubito(getHtml: (url: string) => Promise<string>, b
   const complete = pagesRead >= Math.max(1, first.pages) && !failedPages;
   return { cars: [...cars.values()], expected: cars.size, complete,
     error: complete ? '' : 'Ricerca Subito parziale: lette ' + pagesRead + ' di ' + first.pages + ' pagine',
-    coverage: { pagesRead, pagesExpected: first.pages, searchResults: first.total, uniqueRead: seen.size, skipped, failedPages, maxPrice: SUBITO.maxPrice, minYear: SUBITO.minYear, region: 'Lombardia' },
+    coverage: { pagesRead, pagesExpected: first.pages, searchResults: first.total, uniqueRead: seen.size, skipped, examples, failedPages, maxPrice: SUBITO.maxPrice, minYear: SUBITO.minYear, region: 'Lombardia' },
   };
 }
 

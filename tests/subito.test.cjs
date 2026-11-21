@@ -102,11 +102,19 @@ test('skips registration years contradicted by the listing, but not model number
   assert.equal(typeof car('46',{advertiser:dealer,body:'Concessionaria dal 1985. Garanzia 12 mesi.'}),'object');
   assert.equal(typeof car('47',{body:'Gomme anno 2019, immatricolata nel 2021'},year(2021,60000)),'object');
   assert.equal(typeof car('48',{subject:'Fiat Panda 1999 euro trattabili'},{'/price':{values:[{key:'1999'}]}}),'object');
+  const reg=(r,km)=>({'/year':{values:[{key:r.slice(3)}]},'/register_date':{values:[{value:r}]},'/mileage_scalar':{values:[{key:String(km)}]}});
+  assert.equal(car('49',{subject:'FIAT GRANDE PUNTO 1.2 BENZINA',body:'Buongiorno\nIn vendita FIAT GRANDE PUNTO 1.2 FIRE BENZINA 2010 CON SOLI 57.000 KM!!'},{...catalog('FIAT','Grande Punto'),'/price':{values:[{key:'5500'}]},...reg('11/2026',57000)}),'anno_incoerente');
+  assert.equal(car('60',{advertiser:dealer},reg('11/2026',30000)),'anno_incoerente');
+  assert.equal(typeof car('61',{advertiser:dealer},reg('11/2025',60000)),'object');
 });
 test('skips prices that cannot be a sale: powerful new cars for a few thousand euro, private cars at 0 km',()=>{
   assert.equal(car('50',{advertiser:dealer,subject:'Mercedes-benz GLE 63 AMG S',body:'Pronta consegna'},{...catalog('MERCEDES-BENZ','GLE Coupé (C167)'),...year(2026,0),'/price':{values:[{key:'3500'}]},'/power':{values:[{value:'450 kW / 612 Cv'}]}}),'prezzo_implausibile');
   assert.equal(car('51',{subject:'Fiat Panda'},{...year(2026,0),'/price':{values:[{key:'2000'}]}}),'prezzo_implausibile');
   assert.equal(typeof car('52',{advertiser:dealer},{...year(2026,0),'/price':{values:[{key:'4800'}]}}),'object');
+  assert.equal(car('53',{subject:'CITROEN C2 BENZINA KM 17650 3 PORTE'},{...catalog('CITROEN','C2'),...year(2025,17650),'/price':{values:[{key:'2300'}]}}),'prezzo_implausibile');
+  assert.equal(car('54',{subject:'REGAL RAPTOR, 100% ELETTRICA',advertiser:dealer,body:'MINICAR a 2 POSTI, 100% ELETTRICA'},catalog('PIAGGIO','Porter')),'microcar');
+  assert.equal(car('55',{subject:'Microcar elettrica'},{'/power':{values:[{value:'3 kW / 4 Cv'}]}}),'microcar');
+  assert.equal(typeof car('56',{body:'Schermo con mini carplay, sensori'}),'object');
 });
 test('reads a declared price without financing and flags conditional prices',()=>{
   const ke=S.priceTerms('Fiat Panda','PREZZO SENZA FINANZIAMENTO: € 13900,00\n PREZZO PROMOZIONALE KE AUTO+: € 9999,00',9999);
