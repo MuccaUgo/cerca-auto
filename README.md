@@ -171,3 +171,91 @@ di prezzo da verificare. Gli orari e le notifiche senza novità restano attivi.
 Altre segnalazioni richiedono l'identificazione del venditore e la provenienza
 dell'informazione; non si attribuisce un vincolo di finanziamento per il solo
 fatto che esista un calcolatore di rate.
+
+## Collegare le offerte Subito fornite dai rivenditori
+
+Il catalogo accetta gli annunci che un rivenditore fornisce e autorizza a usare.
+La fonte compare come **Subito · stock rivenditori** quando contiene offerte
+attive in Lombardia, con prezzo pubblicizzato entro 10.000 € e anno dal 2020.
+La copertura riguarda esclusivamente lo stock ricevuto. I link alle schede
+Subito vengono aperti dal visitatore e la scansione legge il database locale.
+
+Applicare una volta `supabase/car-partner-stock.sql`. L'archivio è accessibile
+al server e all'amministratore. Un importatore autorizzato può fare upsert in
+batch su `car_partner_stock` con chiave `subito_id` e quattro campi:
+
+| Campo | Contenuto |
+|---|---|
+| `subito_id` | ID numerico come testo, corrispondente alla scheda Subito |
+| `provenance` | Provenienza del catalogo e riferimento all'autorizzazione del fornitore, per uso interno |
+| `valid_until` | Scadenza della disponibilità dichiarata o del prossimo rinnovo dello stock, con fuso orario |
+| `listing` | Oggetto JSON descritto sotto |
+
+Nel JSON indicare `url`, `sellerName`, `countryCode` (“IT”), `postcode`,
+`brand`, `model`, `year` e `price`. Anno e importi sono numeri interi,
+senza separatori. Per il confronto aggiungere i dati disponibili: `reg`
+(MM/AAAA), `ver`, `km`, `cv`, `gear`, `fuel`, `city`, `body`.
+Per disponibilità usare i booleani `res` (prenotata) o `unavailable`.
+`pricing` accetta `cash` per un prezzo senza vincoli dichiarato, `finance`
+per un prezzo con finanziamento e `unknown` per condizioni sconosciute.
+Con `finance` il campo numerico facoltativo `cash` contiene il prezzo senza
+finanziamento comunicato dal venditore. Le altre condizioni vanno in `note`.
+
+Per aggiornare un catalogo completo, importare le righe del rivenditore in
+transazione. Aggiornare la scadenza solo sulle vetture confermate dal fornitore
+e far scadere immediatamente quelle ritirate. Le righe scadute non vengono lette.
+Un esempio di importazione parametrizzata (parametro JSON composto da un array
+di righe con i quattro campi sopra):
+
+```sql
+insert into public.car_partner_stock (subito_id, listing, provenance, valid_until)
+select subito_id, listing, provenance, valid_until
+from jsonb_to_recordset($1::jsonb)
+  as incoming(subito_id text, listing jsonb, provenance text, valid_until timestamptz)
+on conflict (subito_id) do update
+set listing = excluded.listing, provenance = excluded.provenance, valid_until = excluded.valid_until;
+```
+
+Per confermare che si tratta della stessa vettura su più portali, il
+fornitore può indicare `autoscoutListingId` (UUID della scheda abbinata),
+`vin` (telaio completo), oppure `stock` e `autoscoutSellerId`
+(riferimento stock del gestionale e ID AutoScout24 dello stesso salone).
+Il codice stock deve corrispondere al riferimento venditore presente su
+AutoScout24. Codici ambigui e identificativi in conflitto impediscono
+l'unione. I dati di identità tecnici vengono rimossi dalla risposta pubblica.
+
+Per un possibile doppione servono lo stesso salone identificato, marca,
+modello, versione, mese di immatricolazione, potenza, cambio e alimentazione.
+La tolleranza sui km è l'1%, con minimo 100 e massimo 1.000 km. Le due schede
+restano distinte. Le unioni confermate mantengono la chiave della scheda
+originaria, i link, i prezzi e i vincoli per ciascuna offerta. Il conteggio
+dello stock indica le offerte importate dalla fonte, anche quando una
+confluisce nella scheda di un'altra fonte.
+
+Test del catalogo: `node --test tests/partner-stock.test.cjs tests/lombardia.test.cjs`.
+
+L'adattatore diretto `subito.ts` già presente sul server è conservato. Solo
+in presenza di un'autorizzazione che copre l'accesso diretto al portale si
+attiva `SUBITO_DIRECT_AUTHORIZED=true` sulla funzione `cerca-auto`.
+Il valore predefinito è disattivato. Quando attivo, il controllo regionale
+riporta pagine raccolte ed eventuali letture parziali. Una scheda letta
+direttamente e presente anche nello stock del salone conta come una sola
+offerta Subito. Il prezzo e le condizioni provengono dalla scheda letta
+direttamente, e i dati economici discordanti ricevono un'avvertenza.
+La chiave storica `Subito Lombardia|id` e quella dello stock restano
+collegate allo stesso annuncio. Venditori con nome e comune coincidenti
+su portali diversi possono generare un suggerimento; questo da solo non
+conferma l'identità del veicolo.
+
+### Collegare personalmente un annuncio Subito
+
+Seleziona una sola auto, tocca **Collega Subito** e confronta venditore,
+versione, immatricolazione e chilometri. Puoi cercare il modello in Lombardia
+dal dialogo. Quando riconosci la vettura, inserisci il link all’annuncio e,
+se vuoi, il prezzo pubblicizzato. La scheda e **Copia per AI** mostrano entrambe
+le offerte. **Modifica link Subito** permette di correggere o rimuovere il collegamento.
+Questo abbinamento è salvato nel browser del dispositivo. Le classifiche e gli
+avvisi programmati usano le offerte acquisite dal server.
+
+La lista mostra 60 schede per volta. I filtri, i conteggi, la classifica e
+**Seleziona i risultati** lavorano sull'intero insieme filtrato.
