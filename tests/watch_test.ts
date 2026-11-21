@@ -43,7 +43,7 @@ globalThis.fetch = (async (input: any, init: any = {}) => {
   if (table === 'car_watch_inventory') {
     if (method === 'POST') { for (const row of body) { if (!('entered_at' in row) || !('entered_from' in row)) throw new Error('riga senza colonne ribasso'); st.inventory.set(row.car_key, row); } return json(null, 201); }
     if (!q.get('select')!.includes('price:car->price')) throw new Error('manca il prezzo precedente');
-    return page([...st.inventory.values()].sort((a, b) => a.car_key < b.car_key ? -1 : 1).map((r) => ({ car_key: r.car_key, first_seen: r.first_seen, eligible: r.eligible, entered_at: r.entered_at, entered_from: r.entered_from, price: r.car.price })));
+    return page([...st.inventory.values()].sort((a, b) => a.car_key < b.car_key ? -1 : 1).map((r) => ({ car_key: r.car_key, first_seen: r.first_seen, eligible: r.eligible, entered_at: r.entered_at, entered_from: r.entered_from, price: r.car.price, last_seen: r.last_seen, prices: r.car.watchPrices, dropKey: r.car.watchDropKey })));
   }
   if (table === 'car_watch_sources') { if (method === 'POST') { body.forEach((r: any) => st.sources.add(r.name)); return json(null, 201); } return page([...st.sources].sort().map((name) => ({ name }))); }
   if (table === 'car_watch_subscriptions') { if (method === 'PATCH') return json(null, 204); return page(st.subs.filter((s) => s.enabled)); }
@@ -127,6 +127,30 @@ st.catalogStatus = 200;
 // 9) il primo controllo di una fonte crea lo storico ma conferma comunque il controllo.
 st.catalog.push(mk('Nuova fonte', 'INITIAL', 9000)); r = await scan();
 check('9 nuovo stock non trattato come novità', [r.pushes.length, r.pushes.every((p) => p.count === 0), sentKeys().includes('Nuova fonte|INITIAL')], [2, true, false]);
+
+// Publish the same car on two portals, rotate the primary and retain only the partner offer.
+const partner = 'Subito · stock rivenditori';
+const original = mk('brumbrum', 'cross-portal', 10500);
+const secondary = mk(partner, 'partner-id', 9000, 2021, { note: 'Finanziamento segnalato: verificare' });
+const grouped = (a: ReturnType<typeof mk>, b: ReturnType<typeof mk>) => ({ ...a, offers: [a, b] });
+st.catalog = [original, mk(partner, 'initial-stock', 8500)]; r = await scan();
+check('stock partner iniziale senza avviso', r.pushes.every(p => p.count === 0), true);
+st.catalog = [grouped(original, secondary)]; r = await scan();
+check('nuova auto con seconda offerta nel budget, un solo avviso per dispositivo', r.pushes.map(p => p.count), [1,1]);
+check('prezzo e link usati dalla stessa offerta', [r.pushes[0]?.cars[0]?.url,r.pushes[0]?.cars[0]?.label.includes('9.000 € · condizioni di prezzo da verificare'),r.run.price_drops], [secondary.url,true,0]);
+st.catalog = [grouped(secondary, original)]; r = await scan();
+check('cambio principale senza nuovo avviso', [r.run.new_cars,r.pushes.map(p => p.count)], [0,[0,0]]);
+st.catalog = [secondary]; r = await scan();
+check('seconda offerta rimasta da sola senza nuovo avviso', [r.run.new_cars,r.pushes.map(p => p.count)], [0,[0,0]]);
+
+// Stock già noto sopra soglia: il passaggio a un altro prezzo non è un ribasso della stessa offerta.
+const old = mk('brumbrum','known-multi',12500);
+baseline(old);
+const alt = mk(partner,'other-known-multi',10500);
+st.catalog = [grouped(old,alt)]; await scan();
+const cheaper = { ...alt, price: 9800 };
+st.catalog = [grouped(old,cheaper)]; r = await scan();
+check('ribasso confrontato nella stessa offerta', [r.run.new_cars,r.run.price_drops,r.pushes[0]?.cars[0]?.url,r.pushes[0]?.body.includes('era 10.500 €')], [0,1,alt.url,true]);
 
 // 10) l'ora della conferma segue Europe/Rome in inverno e in estate.
 for (const [checkedAt, expected] of [['2026-11-17T09:00:00Z', '10:00'], ['2026-07-17T08:00:00Z', '10:00']]) {

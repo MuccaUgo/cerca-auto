@@ -83,3 +83,20 @@ test('reported financing is excluded as a deal and as reference, and survives AI
  assert.equal(applyFilters(data,{...DEFAULTS,price:10000,clean:true},{}).length,0);
  const text=formatListingsForAI([data[0]],null);assert.match(text,/segnalato dall’utente/);assert.match(text,/senza finanziamento da verificare/);assert.doesNotMatch(text,/Prezzo senza finanziamento: [0-9]/);
 });
+
+test('one grouped vehicle uses the specific safe quote and keeps offers separate across filters and export',()=>{
+  const [pick,...peers]=market({price:7990,real:false,note:'Solo con finanziamento'});
+  const second={src:'Subito · stock rivenditori',id:'800001',portal:'subito',price:9000,real:true,url:'https://www.subito.it/auto/prova-800001.htm'};
+  const grouped={...pick,offers:[pick,second],aliases:[pick.src+'|'+pick.id,second.src+'|'+second.id]};
+  const rates=Deals.calculate([grouped,...peers],2026), result=rates[Deals.key(grouped)];
+  assert.equal(result.price,9000);assert.equal(result.url,second.url);assert.equal(result.peers,3);
+  const narrow={...DEFAULTS,price:8500,clean:true};
+  assert.equal(applyFilters([grouped],narrow,rates).length,0);
+  const visible=applyFilters([grouped],{...narrow,price:10000,src:[second.src]},rates);
+  assert.equal(visible[0].url,second.url);assert.equal(visible[0].note,undefined);
+  assert.match(formatListingsForAI([grouped]),/Subito · stock rivenditori.*9.000 €.*senza vincoli dichiarato/);
+  assert.equal(Deals.calculate([{...grouped,possibleMatches:[peers[0]]},...peers],2026)[Deals.key(grouped)],undefined);
+  const {priceMap,markChanges}=context.module.exports;
+  markChanges([grouped],priceMap([{...second,price:9450}]));
+  assert.equal(grouped.isNew,false);assert.equal(second.drop,450);assert.equal(grouped.drop,0);
+});
