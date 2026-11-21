@@ -1,12 +1,17 @@
 // Alert criteria, in one place: the scan, the notification text and the config endpoint all read them.
 export const WATCH = { maxPrice: 10000, minYear: 2020 };
 
+type Offer = {
+  src: string; id: string | number; price: number; url: string; cash?: number;
+  res?: boolean; unavailable?: boolean; note?: string;
+};
 export type WatchCar = {
   src: string; id: string | number; brand: string; model: string; year: number;
   price: number; cash?: number; res?: boolean; url: string;
+  offers?: Offer[]; watchPrices?: Record<string, number>; watchDropKey?: string;
   [key: string]: unknown;
 };
-export function carKey(car: WatchCar): string { return car.src + '|' + car.id; }
+export function carKey(car: Pick<Offer, 'src' | 'id'>): string { return car.src + '|' + car.id; }
 // entered_at / entered_from: when a car already in the inventory dropped below the price limit, and from which price.
 export type InventoryRow = {
   car_key: string; src: string; first_seen: string; last_seen: string; eligible: boolean;
@@ -15,21 +20,66 @@ export type InventoryRow = {
 export type PreviousRow = {
   car_key: string; first_seen: string; eligible: boolean;
   entered_at?: string | null; entered_from?: number | null; price?: number | null;
+  last_seen?: string; prices?: Record<string, number> | null; dropKey?: string | null;
 };
+function currentOffers(car: WatchCar): Offer[] {
+  return car.offers?.length ? car.offers : [car];
+}
+// Only keys of confirmed offers enter this history. Similar-looking cars keep their own history.
+export function watchKeys(row: InventoryRow): string[] {
+  return row.car.watchPrices ? Object.keys(row.car.watchPrices) : [row.car_key];
+}
+// Used for push text as well as eligibility, so price, URL and finance conditions always refer to the same offer.
+export function selectWatchOffer(car: WatchCar, key?: string): WatchCar | undefined {
+  let selected: WatchCar | undefined;
+  for (const offer of currentOffers(car)) {
+    if (key && carKey(offer) !== key) continue;
+    const candidate = offer === car ? car : {
+      ...car, ...offer, cash: offer.cash, note: offer.note, res: offer.res, unavailable: offer.unavailable,
+    };
+    if (matchesWatch(candidate) && (!selected || candidate.price < selected.price)) selected = candidate;
+  }
+  return selected;
+}
 export function observeCars(cars: WatchCar[], previous: PreviousRow[], initialized: string[], now: string): InventoryRow[] {
-  const known = new Map(previous.map((row) => [row.car_key, row]));
+  const byOffer = new Map<string, PreviousRow[]>();
+  for (const row of previous) {
+    const keys = row.prices ? Object.keys(row.prices) : [row.car_key];
+    for (const key of keys) {
+      const matches = byOffer.get(key);
+      if (matches) matches.push(row);
+      else byOffer.set(key, [row]);
+    }
+  }
   const ready = new Set(initialized);
   return cars.map((car) => {
-    const key = carKey(car), old = known.get(key);
-    // A known car "enters" the watch when its last stored price was above the limit and it now matches.
-    const oldPrice = old ? Number(old.price) : NaN;
-    const entered = Number.isFinite(oldPrice) && oldPrice > WATCH.maxPrice && matchesWatch(car);
+    const key = carKey(car);
+    const offers = currentOffers(car);
+    const history = [...new Set(offers.flatMap(offer => byOffer.get(carKey(offer)) ?? []))];
+    // Order matters if two previously observed listings have just been confirmed as the same vehicle.
+    history.sort((a, b) => Date.parse(a.last_seen ?? a.first_seen) - Date.parse(b.last_seen ?? b.first_seen));
+    const prices: Record<string, number> = {};
+    let first: PreviousRow | undefined, lastDrop: PreviousRow | undefined;
+    for (const row of history) {
+      if (!first || Date.parse(row.first_seen) < Date.parse(first.first_seen)) first = row;
+      if (row.entered_at && (!lastDrop || Date.parse(row.entered_at) > Date.parse(lastDrop.entered_at!))) lastDrop = row;
+      if (row.prices) Object.assign(prices, row.prices);
+      else if (Number(row.price) > 0) prices[row.car_key] = Number(row.price);
+    }
+    let drop: Offer | undefined;
+    for (const offer of offers) {
+      if (prices[carKey(offer)] > WATCH.maxPrice && matchesWatch({ ...offer, year: car.year, brand: car.brand, model: car.model }) &&
+          (!drop || offer.price < drop.price)) drop = offer;
+    }
+    const from = drop ? prices[carKey(drop)] : lastDrop?.entered_from ?? null;
+    const dropKey = drop ? carKey(drop) : lastDrop?.dropKey ?? lastDrop?.car_key;
+    for (const offer of offers) prices[carKey(offer)] = offer.price;
+    const tracked = Object.keys(prices).length > 1 ? { ...car, watchPrices: prices, watchDropKey: dropKey } : car;
     return {
-      car_key: key, src: car.src, first_seen: old?.first_seen ?? now, last_seen: now,
-      eligible: old ? old.eligible : ready.has(car.src),
-      entered_at: entered ? now : old?.entered_at ?? null,
-      entered_from: entered ? oldPrice : old?.entered_from ?? null,
-      car,
+      car_key: key, src: car.src, first_seen: first?.first_seen ?? now, last_seen: now,
+      eligible: first ? first.eligible : ready.has(car.src),
+      entered_at: drop ? now : lastDrop?.entered_at ?? null,
+      entered_from: from, car: tracked,
     };
   });
 }

@@ -1,5 +1,5 @@
 import webpush from 'npm:web-push@3.6.7';
-import { failedNotification, matchesWatch, notification, observeCars, safePushEndpoint, WATCH, type WatchCar } from './helpers.ts';
+import { failedNotification, selectWatchOffer, watchKeys, notification, observeCars, safePushEndpoint, WATCH, type WatchCar } from './helpers.ts';
 
 const PROJECT = Deno.env.get('SUPABASE_URL')!;
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -91,9 +91,8 @@ async function scan() {
     const data = await res.json();
     if (!Array.isArray(data.cars) || !data.cars.length || !Array.isArray(data.sources)) throw new Error('No usable catalog');
     const [previous, initialized] = await Promise.all([
-      all('car_watch_inventory?select=car_key,first_seen,eligible,entered_at,entered_from,price:car->price', 'car_key'), all('car_watch_sources?select=name', 'name'),
+      all('car_watch_inventory?select=car_key,first_seen,eligible,entered_at,entered_from,last_seen,price:car->price,prices:car->watchPrices,dropKey:car->watchDropKey', 'car_key'), all('car_watch_sources?select=name', 'name'),
     ]);
-    const known = new Map(previous.map((row) => [row.car_key, row]));
     const cars: WatchCar[] = data.cars.filter((car: WatchCar) => car && car.src && car.id !== undefined && car.id !== null && Number.isFinite(car.price) && car.price > 0);
     const rows = observeCars(cars, previous, initialized.map((row) => row.name), now);
     for (let i = 0; i < rows.length; i += 200) await db('car_watch_inventory?on_conflict=car_key', 'POST', rows.slice(i, i + 200), 'resolution=merge-duplicates');
@@ -103,29 +102,33 @@ async function scan() {
     if (complete.length) await db('car_watch_sources?on_conflict=name', 'POST', complete, 'resolution=ignore-duplicates');
     const subscriptions: Subscription[] = await all('car_watch_subscriptions?select=id,subscription,token_hash,enabled,created_at&enabled=eq.true', 'id');
     let pushes = 0, failed = 0;
-    const cutoff = new Date(Date.now() - 7 * 86400000).toISOString();
+    const cutoff = Date.now() - 7 * 86400000;
     for (const sub of subscriptions) {
       const sent = new Set((await all('car_watch_sent?select=car_key&subscription_id=eq.' + sub.id, 'car_key')).map((row) => row.car_key));
       // Two reasons to alert, both only for events after this device subscribed and within the last week:
       // a new listing that matches, or a known car whose price dropped below the limit.
       const since = Date.parse(sub.created_at);
       const fresh = rows.flatMap((row) => {
-        if (sent.has(row.car_key) || !matchesWatch(row.car)) return [];
+        if (watchKeys(row).some(key => sent.has(key))) return [];
         const enteredAt = row.entered_at ? Date.parse(row.entered_at) : NaN;
-        const dropped = enteredAt > since && enteredAt >= Date.parse(cutoff);
-        const isNew = row.eligible && row.first_seen > sub.created_at && row.first_seen >= cutoff;
-        return dropped || isNew ? [{ row, from: dropped ? row.entered_from : null }] : [];
+        if (enteredAt > since && enteredAt >= cutoff) {
+          const car = selectWatchOffer(row.car, row.car.watchDropKey ?? row.car_key);
+          if (car) return [{ row, car, from: row.entered_from }];
+        }
+        const seen = Date.parse(row.first_seen);
+        const car = row.eligible && seen > since && seen >= cutoff ? selectWatchOffer(row.car) : undefined;
+        return car ? [{ row, car, from: null }] : [];
       });
-      fresh.sort((a, b) => a.row.car.price - b.row.car.price);
+      fresh.sort((a, b) => a.car.price - b.car.price);
       try {
         // Every completed check delivers an outcome, even when there are no unsent car events.
-        if (await send(sub, notification(fresh.map((alert) => ({ car: alert.row.car, from: alert.from })), runId, summary))) {
+        if (await send(sub, notification(fresh, runId, summary))) {
           for (let i = 0; i < fresh.length; i += 200) await db('car_watch_sent?on_conflict=subscription_id,car_key', 'POST', fresh.slice(i, i + 200).map((alert) => ({ subscription_id: sub.id, car_key: alert.row.car_key })), 'resolution=ignore-duplicates');
           pushes++;
         }
       } catch (_error) { failed++; }
     }
-    const count = rows.filter((row) => !known.has(row.car_key) && row.eligible).length;
+    const count = rows.filter((row) => row.first_seen === now && row.eligible).length;
     const drops = rows.filter((row) => row.entered_at === now).length;
     await db('car_watch_runs?id=eq.' + runId, 'PATCH', { finished_at: new Date().toISOString(), status: partial || failed ? 'partial' : 'ok', sources: data.sources, cars_read: rows.length, new_cars: count, price_drops: drops, pushes_sent: pushes, error: failed ? failed + ' push deliveries failed' : null });
     return { runId, cars: rows.length, newCars: count, drops, pushes, partial, failed };
