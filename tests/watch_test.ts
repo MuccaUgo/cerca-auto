@@ -168,5 +168,9 @@ check('titolo 2 ribassi', notification([{ car, from: 10500 }, { car, from: 11000
 check('auto mai vista con prezzo ignoto non è un ribasso', observeCars([car], [{ car_key: 'brumbrum|X', first_seen: pg(T), eligible: false, price: null }], [], pg(T))[0].entered_at, null);
 check('segnalazione finanziamento esplicita nella notifica', notification([{car:{...car,note:'Finanziamento segnalato dall’utente: prezzo senza finanziamento da verificare'}}], 't').body.includes('condizioni di prezzo da verificare'), true);
 check('finanziamento noto resta distinto dalla segnalazione', notification([{car:{...car,cash:10950}}], 't').body.includes('con finanziamento'), true);
+const aliasCar = {...car, aliases: ['Subito Lombardia|42', 'brumbrum|X']};
+const aliasRow = observeCars([aliasCar], [{car_key:'Subito Lombardia|42', first_seen:pg(T-H), eligible:true, price:12000}], [], pg(T))[0];
+check('alias confermato conserva il primo avvistamento', aliasRow.first_seen, pg(T-H));
+check('un altro portale non genera un falso ribasso', aliasRow.entered_at, null);
 console.log(failed ? '\n' + failed + ' PROVE FALLITE' : '\nTUTTE LE PROVE SUPERATE');
 Deno.exit(failed ? 1 : 0);
