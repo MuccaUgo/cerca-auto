@@ -8,7 +8,7 @@ type Offer = {
 export type WatchCar = {
   src: string; id: string | number; brand: string; model: string; year: number;
   price: number; cash?: number; res?: boolean; url: string;
-  offers?: Offer[]; watchPrices?: Record<string, number>; watchDropKey?: string;
+  aliases?: string[]; offers?: Offer[]; watchPrices?: Record<string, number>; watchDropKey?: string;
   [key: string]: unknown;
 };
 export function carKey(car: Pick<Offer, 'src' | 'id'>): string { return car.src + '|' + car.id; }
@@ -55,7 +55,8 @@ export function observeCars(cars: WatchCar[], previous: PreviousRow[], initializ
   return cars.map((car) => {
     const key = carKey(car);
     const offers = currentOffers(car);
-    const history = [...new Set(offers.flatMap(offer => byOffer.get(carKey(offer)) ?? []))];
+    const keys = new Set([...offers.map(carKey), ...(car.aliases ?? [])]);
+    const history = [...new Set([...keys].flatMap(key => byOffer.get(key) ?? []))];
     // Order matters if two previously observed listings have just been confirmed as the same vehicle.
     history.sort((a, b) => Date.parse(a.last_seen ?? a.first_seen) - Date.parse(b.last_seen ?? b.first_seen));
     const prices: Record<string, number> = {};
@@ -73,6 +74,8 @@ export function observeCars(cars: WatchCar[], previous: PreviousRow[], initializ
     }
     const from = drop ? prices[carKey(drop)] : lastDrop?.entered_from ?? null;
     const dropKey = drop ? carKey(drop) : lastDrop?.dropKey ?? lastDrop?.car_key;
+    // An alias identifies the vehicle even if no price has been observed under that key.
+    for (const alias of keys) prices[alias] ??= 0;
     for (const offer of offers) prices[carKey(offer)] = offer.price;
     const tracked = Object.keys(prices).length > 1 ? { ...car, watchPrices: prices, watchDropKey: dropKey } : car;
     return {
