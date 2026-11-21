@@ -263,3 +263,7 @@ avvisi programmati usano le offerte acquisite dal server.
 
 La lista mostra 60 schede per volta. I filtri, i conteggi, la classifica e
 **Seleziona i risultati** lavorano sull'intero insieme filtrato.
+
+### Esclusioni personali
+
+In **Altri filtri**, inserisci marche intere o parole da escludere dal titolo, dalla versione e dalla carrozzeria, separate da virgole. Mahindra è esclusa di default. Le preferenze restano sul dispositivo e si applicano ai risultati e ai migliori affari. Gli avvisi programmati usano i criteri del server.

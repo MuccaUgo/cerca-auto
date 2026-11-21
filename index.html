@@ -217,6 +217,14 @@ body.has-selection .wrap{padding-bottom:190px}
               <select id="fSeller"><option value="">Tutti</option><option value="dealer">Concessionari</option><option value="private">Privati</option></select>
             </label>
           </div>
+          <div class="grid">
+            <label class="f" for="excludedBrands">Marche da escludere (separate da virgole)
+              <input id="excludedBrands" type="text" placeholder="Es. Mahindra, Aixam">
+            </label>
+            <label class="f" for="excludedTerms">Parole da escludere (separate da virgole)
+              <input id="excludedTerms" type="text" placeholder="Es. van, autocarro, 2 posti">
+            </label>
+          </div>
           <div class="group"><span>Alimentazione</span><div class="chips" id="cFuel"></div></div>
           <div class="group"><span>Cambio</span><div class="chips" id="cGear"></div></div>
           <div class="group"><span>Sito</span><div class="chips" id="cSrc"></div><div class="source-summary" id="bySrc"></div></div>
@@ -334,9 +342,9 @@ var FUNCTION_URL = "https://udhrplrxqxgiafwxtbqe.supabase.co/functions/v1/cerca-
 // Chiave pubblica (anon) del progetto Supabase: serve solo a chiamare la funzione.
 var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkaHJwbHJ4cXhnaWFmd3h0YnFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4NzMxNDYsImV4cCI6MjExMDQ0OTE0Nn0.IGw8x9AdKhWRMfIcU3CG7dHjbBQACOn1qlqDA75cNmo";
 
-var APP_VERSION = "17 · 21 nov 2026";
+var APP_VERSION = "18 · 21 nov 2026";
 
-var DEFAULTS={price:10000,year:2020,km:0,brand:"",body:"",seller:"",sort:"price",text:"",fuel:[],gear:"",src:[],res:false,disc:false,fresh:false,clean:false};
+var DEFAULTS={excludedBrands:"Mahindra",excludedTerms:"",price:10000,year:2020,km:0,brand:"",body:"",seller:"",sort:"price",text:"",fuel:[],gear:"",src:[],res:false,disc:false,fresh:false,clean:false};
 
 function catalogOffers(car){
   return car.offers && car.offers.length ? car.offers : [car];
@@ -364,8 +372,17 @@ function quoteDetails(o){
 }
 function applyFilters(cars,s,ratings){
   var t=s.text.trim().toLowerCase();
+  var normalize=function(value){return String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();};
+  var tokens=function(value){return String(value||"").split(",").map(normalize).filter(Boolean);};
+  var excludedBrands=new Set(tokens(s.excludedBrands===undefined?DEFAULTS.excludedBrands:s.excludedBrands));
+  var excludedTerms=tokens(s.excludedTerms);
   var out=[];
   cars.forEach(function(c){
+    if(excludedBrands.has(normalize(c.brand))) return;
+    if(excludedTerms.length){
+      var title=" "+normalize([c.brand,c.model,c.ver,c.body].join(" "))+" ";
+      if(excludedTerms.some(function(term){return title.includes(" "+term+" ");})) return;
+    }
     if(c.year<s.year) return;
     if(s.km && c.km>s.km) return;
     if(s.brand && c.brand!==s.brand) return;
@@ -504,12 +521,14 @@ if(typeof document!=="undefined"){(function(){
   bind("fPrice","price",true);bind("fYear","year",true);bind("fKm","km",true);bind("fBrand","brand");bind("fBody","body");
   bind("fSort","sort");bind("fText","text");bind("fRes","res");bind("fDisc","disc");bind("fFresh","fresh");bind("fClean","clean");
   bind("fSeller","seller");
+  bind("excludedBrands","excludedBrands");bind("excludedTerms","excludedTerms");
   $("reset").addEventListener("click",function(){state=JSON.parse(JSON.stringify(DEFAULTS));render();});
   $("sortDeals").addEventListener("click",function(){state.sort="deal";$("bestDeals").open=false;render();});
   $("explainDeals").addEventListener("click",function(){$("dealDialog").showModal();});
   $("closeDeals").addEventListener("click",function(){$("dealDialog").close();});
 
   function syncControls(){
+    $("excludedBrands").value=state.excludedBrands;$("excludedTerms").value=state.excludedTerms;
     $("fPrice").value=state.price||"";$("fYear").value=state.year;$("fKm").value=state.km;$("fBrand").value=state.brand;$("fBody").value=state.body;
     $("fSort").value=state.sort;$("fText").value=state.text;$("fRes").checked=state.res;$("fDisc").checked=state.disc;$("fFresh").checked=state.fresh;$("fClean").checked=state.clean;
     $("fSeller").value=state.seller;
@@ -655,7 +674,7 @@ if(typeof document!=="undefined"){(function(){
     renderDeals(res);
     $("count").textContent=res.length;
     $("countLabel").textContent="auto su "+nf.format(CARS.length);
-    var advanced=[state.brand,state.body,state.seller,state.fuel.length,state.gear,state.src.length,state.res,state.disc,state.fresh,state.clean].filter(Boolean).length;
+    var advanced=[state.excludedBrands.trim(),state.excludedTerms.trim(),state.brand,state.body,state.seller,state.fuel.length,state.gear,state.src.length,state.res,state.disc,state.fresh,state.clean].filter(Boolean).length;
     $("advancedCount").hidden=!advanced;
     $("advancedCount").textContent=advanced+" attiv"+(advanced===1?"o":"i");
     var nNew=res.filter(function(c){return c.isNew;}).length;
