@@ -6,6 +6,7 @@ export type RegionalCar = {
   src: string; id: string; brand: string; model: string; ver: string; year: number; reg: string;
   km: number; price: number; old: number; gear: string; res: boolean; unavailable: boolean;
   fuel: string; fuelLabel: string; cv: number; body: string; url: string; real: boolean; note: string;
+  matchIdentity?: {stock?: string; vin?: string};
   portal: string; sellerId: string; sellerName: string; sellerType: string; city: string; postcode: string;
 };
 // Segnalazione dell'utente del 17/11/2026, non verifica delle condizioni contrattuali.
@@ -57,6 +58,7 @@ export function listingCar(l: Listing, knownDealers: Record<string, string> = {}
     fuel: fuel(label), fuelLabel: label.replace('Elettrica/', 'Ibrida ').trim(), cv: power ? Number(power[1]) : 0,
     body: typeof v.bodyType === 'string' ? v.bodyType : '', url: url.href,
     real: !l.price?.isConditionalPrice && /prezzo\s*(?:reale|vero)|prezzovero|senza\s+vincoli|nessun\s+vincolo|no\s+vincoli/i.test(raw), note: notes.join(' · '),
+    matchIdentity: {stock: l.crossReferenceId ?? l.identifier?.crossReferenceId, vin: v.vin},
     portal: 'autoscout24', sellerId: String(seller.id ?? ''), sellerName: sellerType === 'private' ? 'Privato' : String(seller.companyName ?? 'Venditore AutoScout24'),
     sellerType, city: String(l.location.city ?? ''), postcode: String(l.location.zip),
   });
@@ -95,7 +97,7 @@ export async function collectLombardia(getHtml: (url: string) => Promise<string>
 }
 
 // Mantieni i saloni già configurati come fonte, e arricchisci i doppioni con i dati del venditore.
-export function mergeListings<T extends { src: string; id: string; url: string; [key: string]: any }>(cars: T[]): T[] {
+export function mergeListings<T extends { src: string; id: string; url: string; note?:string; real?:boolean; unavailable?:boolean; [key: string]: any }>(cars: T[]): T[] {
   const out = new Map<string, T>();
   for (const car of cars) {
     const identity = /autoscout24\.it\/annunci\//i.test(car.url) ? 'as24|' + car.id.toLowerCase() : car.src + '|' + car.id;
@@ -104,6 +106,9 @@ export function mergeListings<T extends { src: string; id: string; url: string; 
     for (const field of ['sellerId', 'sellerName', 'sellerType', 'city', 'postcode', 'portal']) if (!old[field] && car[field]) Object.assign(old, { [field]: car[field] });
     if (car.note && !old.note?.includes(car.note)) old.note = [old.note, car.note].filter(Boolean).join(' · ');
     if (car.note) old.real = false;
+    if (car.matchIdentity) Object.assign(old, { matchIdentity: {
+      stock: old.matchIdentity?.stock || car.matchIdentity.stock, vin: old.matchIdentity?.vin || car.matchIdentity.vin
+    } });
     if (car.unavailable) old.unavailable = true;
   }
   return [...out.values()].map(applyPriceWarnings);

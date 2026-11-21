@@ -3,9 +3,11 @@
 // Altri siti: scrivere una funzione che restituisce { cars, expected } e aggiungerla a `own` in fondo.
 
 import { scoreDeals, type Deal } from "./deals.ts";
-import { collectLombardia, LOMBARDIA, mergeListings } from "./lombardia.ts";
+import { collectSubito, SUBITO } from './subito.ts';
+import { reconcileSubito, groupPartnerStock, collectPartnerStock, PARTNER_SOURCE, type MatchCar } from './partner.ts';
+import { applyPriceWarnings, collectLombardia, LOMBARDIA, mergeListings } from "./lombardia.ts";
 
-type Car = {
+type Car = MatchCar & {
   src: string; id: string; brand: string; model: string; ver: string;
   year: number; reg: string; km: number; price: number; old: number;
   gear: string; res: boolean; fuel: string; fuelLabel: string; cv: number;
@@ -173,6 +175,10 @@ function autoscoutDealer(name: string, slug: string, dealerNote = ""): () => Pro
       const rawTitle = String(v.modelVersionInput ?? "") + " " + String(v.subtitle ?? "");
       cars.push({
         src: name,
+        portal: 'autoscout24',
+        sellerId: String(l.seller?.id ?? ''),
+        sellerType: 'dealer', sellerName: String(l.seller?.companyName ?? name),
+        matchIdentity: { stock: l.crossReferenceId ?? l.identifier?.crossReferenceId, vin: v.vin },
         id: l.id,
         brand: String(v.make ?? "").normalize("NFD").replace(/[̀-ͯ]/g, ""),
         model: String(v.model ?? ""),
@@ -250,6 +256,22 @@ async function amAutoccasione(): Promise<SourceResult> {
   return { cars, expected: found };
 }
 
+async function partnerInventory(): Promise<SourceResult> {
+  const url = Deno.env.get('SUPABASE_URL'), key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!url || !key) throw Error('Archivio stock non configurato');
+  const readAt = new Date().toISOString();
+  const stock = await collectPartnerStock(async after => {
+    const query = new URLSearchParams({select:'subito_id,listing', valid_until:'gt.'+readAt, order:'subito_id.asc', limit:'500'});
+    if (after) query.set('subito_id','gt.'+after);
+    const response = await fetch(url+'/rest/v1/car_partner_stock?'+query, {
+      headers:{apikey:key, Authorization:'Bearer '+key}, signal:AbortSignal.timeout(8000)
+    });
+    if (!response.ok) throw Error('Archivio stock non raggiungibile');
+    return await response.json();
+  });
+  return {...stock, cars:stock.cars.map(applyPriceWarnings)};
+}
+
 type Source = { name: string; site: string; run: () => Promise<SourceResult> };
 type Dealer = { slug: string; name: string; place: string; note: string };
 
@@ -303,24 +325,31 @@ Deno.serve(async (req: Request) => {
     { name: "AM Autoccasione", site: "amautoccasione.it", run: amAutoccasione },
     { name: LOMBARDIA.name, site: "autoscout24.it · Lombardia · fino a 10.000 € · dal 2020", run: () => collectLombardia(getHtmlOnce, knownDealers) },
   ];
+  const directAllowed = Deno.env.get('SUBITO_DIRECT_AUTHORIZED') === 'true';
+  if (directAllowed) own.push({name:SUBITO.name,site:'subito.it · Lombardia',run:()=>collectSubito(getHtmlOnce)});
   const dealers: Source[] = configured.map((d) => ({
     name: d.name,
     site: d.place + " (Autoscout24)",
     run: autoscoutDealer(d.name, d.slug, d.note ?? ""),
   }));
   // I siti propri in parallelo; i concessionari Autoscout24 tre alla volta per non caricare troppo il sito.
-  const [ownRes, dealerRes] = await Promise.all([
+  const [ownRes, dealerRes, partner] = await Promise.all([
     Promise.all(own.map(runSource)),
     inBatches(dealers, 3, runSource),
+    runSource({name:PARTNER_SOURCE,site:'Subito · cataloghi forniti dai rivenditori in Lombardia',run:partnerInventory}),
   ]);
   // I saloni configurati hanno precedenza: stessi ID e storico degli avvisi.
-  const ordered = [...dealerRes, ...ownRes];
-  const cars = mergeListings(ordered.flatMap((r) => r.cars).filter((c) => c.price > 0));
-  const retained = new Set(cars);
+  const ordered = [...dealerRes, ...ownRes.filter(result=>result.name !== SUBITO.name)];
+  const direct = ownRes.find(result=>result.name === SUBITO.name);
+  const primary = mergeListings(ordered.flatMap((r) => r.cars).filter((c) => c.price > 0));
+  const retained = new Set(primary);
+  const cars = groupPartnerStock(primary, reconcileSubito(direct?.cars || [],partner.cars).map(applyPriceWarnings));
   const results = [...ownRes, ...dealerRes].map((r) => {
+    if (r.name === SUBITO.name) return r;
     const unique = r.cars.filter((c) => retained.has(c));
     return { ...r, cars: unique, got: unique.length, expected: r.name === LOMBARDIA.name ? unique.length : r.expected };
   });
+  if (partner.cars.length || !partner.ok) results.push(partner);
   const deals = scoreDeals(cars, Date.now());
   if (debug === "deals") {
     const line = (c: Car) => [c.src, c.brand + " " + c.model, c.ver.slice(0, 34), c.reg, c.km, c.cash || c.price, c.deal!.est, c.deal!.pct, c.deal!.n, c.deal!.lvl];

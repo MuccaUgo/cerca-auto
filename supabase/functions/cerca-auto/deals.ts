@@ -12,7 +12,7 @@
 export type Deal = { est: number; pct: number; n: number; lvl: number };
 export type DealCar = {
   src: string; brand: string; model: string; ver?: string; year: number; reg?: string; km: number; price: number;
-  cash?: number; cv?: number; gear?: string; fuel?: string; res?: boolean; note?: string; deal?: Deal;
+  cash?: number; cv?: number; gear?: string; fuel?: string; res?: boolean; note?: string; possibleMatches?: unknown[]; deal?: Deal;
 };
 
 const MIN_COMPS = 3;   // auto dello stesso modello necessarie per dare una stima
@@ -55,6 +55,7 @@ export function scoreDeals(cars: DealCar[], now: number) {
   const today = new Date(now), thisYear = today.getUTCFullYear() + today.getUTCMonth() / 12;
   const rows: Row[] = [];
   for (const car of cars) {
+    if (car.possibleMatches?.length) continue;
     // Con un prezzo valido solo finanziando, il confronto si fa sul prezzo senza finanziamento.
     const price = Number(car.cash) > 0 ? Number(car.cash) : Number(car.price);
     const m = /^(\d{1,2})\/(\d{4})$/.exec(String(car.reg ?? ''));
